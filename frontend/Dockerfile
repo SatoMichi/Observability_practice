@@ -4,7 +4,7 @@ WORKDIR /app
 
 # 依存関係のインストール（キャッシュ最適化）
 COPY package*.json ./
-RUN npm ci --only=production --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 # ソースコードのコピーとビルド
 COPY . .
