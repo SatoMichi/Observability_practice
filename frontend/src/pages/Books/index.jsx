@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import axios from 'axios'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import ErrorMessage from '../../components/ErrorMessage'
 import BookCard from '../../components/BookCard'
@@ -19,8 +18,12 @@ function Books() {
   const fetchBooks = async () => {
     try {
       setLoading(true)
-      const response = await axios.get(`${API_BASE_URL}/books`)
-      setBooks(response.data.books)
+      const response = await fetch(`${API_BASE_URL}/books`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      setBooks(data.books)
       setError(null)
     } catch (err) {
       setError('書籍データの取得に失敗しました')

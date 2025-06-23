@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import axios from 'axios'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import ErrorMessage from '../../components/ErrorMessage'
 import SearchForm from '../../components/SearchForm'
@@ -35,19 +34,25 @@ function Search() {
       setError(null)
       setSearchPerformed(true)
       
-      const response = await axios.get(`${API_BASE_URL}/search`, {
-        params: { q: searchQuery }
-      })
+      const url = new URL(`${API_BASE_URL}/search`)
+      url.searchParams.append('q', searchQuery)
+      
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const data = await response.json()
       
       const searchTime = Date.now() - startTime
-      console.log(`[Frontend] 検索完了: "${searchQuery}" - ${response.data.total_results}件の結果 (${searchTime}ms)`)
+      console.log(`[Frontend] 検索完了: "${searchQuery}" - ${data.total_results}件の結果 (${searchTime}ms)`)
       
-      if (response.data.results.length > 0) {
-        const topResult = response.data.results[0]
+      if (data.results.length > 0) {
+        const topResult = data.results[0]
         console.log(`[Frontend] 最高スコア: "${topResult.title}" by ${topResult.author} (${topResult.score.toFixed(4)})`)
       }
       
-      setResults(response.data.results)
+      setResults(data.results)
       
       // URLパラメータを更新
       setSearchParams({ q: searchQuery })
