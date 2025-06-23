@@ -69,8 +69,9 @@ jobs:
         push: true
         tags: ${{ steps.meta-backend.outputs.tags }}
         labels: ${{ steps.meta-backend.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=min
+        # キャッシュを一時的に無効化（GitHub Actionsサービス障害対応）
+        # cache-from: type=gha
+        # cache-to: type=gha,mode=min
 
     - name: Build and push frontend image
       uses: docker/build-push-action@v5
@@ -80,8 +81,9 @@ jobs:
         push: true
         tags: ${{ steps.meta-frontend.outputs.tags }}
         labels: ${{ steps.meta-frontend.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=min
+        # キャッシュを一時的に無効化（GitHub Actionsサービス障害対応）
+        # cache-from: type=gha
+        # cache-to: type=gha,mode=min
 
     - name: Image vulnerability scan
       uses: aquasecurity/trivy-action@master
