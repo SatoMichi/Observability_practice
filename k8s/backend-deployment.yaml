@@ -19,7 +19,7 @@ spec:
       - name: ghcr-secret
       containers:
       - name: backend
-        image: ghcr.io/satomichi/observability-backend:latest
+        image: ghcr.io/satomichi/observability_practice-backend:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
