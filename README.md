@@ -1,5 +1,7 @@
 # 全文検索アプリケーション
 
+[![Build and Push](https://github.com/SatoMichi/Observability_practice/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/SatoMichi/Observability_practice/actions/workflows/build-and-push.yml)
+
 React + FastAPI構成の全文検索アプリケーションです。NLTK Gutenbergコーパスを使用してTF-IDFベースの検索機能を提供します。
 
 ## 🚀 機能
@@ -55,8 +57,39 @@ Observability_SampleApp/
 │   ├── nginx.conf              # nginx 設定（SPA + API プロキシ）
 │   └── .dockerignore           # Docker ビルド除外設定
 ├── docker-compose.yml          # Docker Compose 設定
+├── .github/workflows/          # GitHub Actions CI/CD
+├── k8s/                        # Kubernetes マニフェスト
 ├── .dockerignore               # プロジェクト全体の除外設定
 └── README.md
+```
+
+## 🐳 CI/CD
+
+GitHub Actionsによる自動化されたワークフロー:
+- **マルチプラットフォームビルド**: linux/amd64, linux/arm64
+- **自動プッシュ**: GitHub Container Registry (GHCR)
+- **セキュリティスキャン**: Trivy による脆弱性検査
+- **キャッシュ最適化**: 高速ビルドのためのレイヤーキャッシュ
+
+### コンテナイメージ
+- **Backend**: `ghcr.io/satomichi/observability-backend:latest`
+- **Frontend**: `ghcr.io/satomichi/observability-frontend:latest`
+
+### 開発フロー
+```bash
+# 1. 開発・コミット
+git add .
+git commit -m "Add new feature"
+git push origin main
+
+# 2. GitHub Actions が自動実行
+# - マルチプラットフォームビルド
+# - GHCR自動プッシュ
+# - セキュリティスキャン
+
+# 3. 手動デプロイ (必要に応じて)
+kubectl rollout restart deployment/backend -n satomichi
+kubectl rollout restart deployment/frontend -n satomichi
 ```
 
 ## 📦 起動方法
