@@ -1,0 +1,57 @@
+@use '../../index.scss';
+
+.search-page {
+  padding: 0 1rem;
+
+  @media (min-width: 640px) {
+    padding: 0;
+  }
+
+
+
+  .search-results {
+    @extend .card;
+    padding: 1.5rem;
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+
+      h2 {
+        font-size: 1.125rem;
+        font-weight: 500;
+        color: #111827;
+        margin: 0;
+
+        .results-count {
+          font-size: 0.875rem;
+          font-weight: 400;
+          color: #6b7280;
+          margin-left: 0.5rem;
+        }
+      }
+    }
+
+    .no-results {
+      text-align: center;
+      padding: 3rem 0;
+
+      .no-results-title {
+        color: #6b7280;
+        font-size: 1.125rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .no-results-subtitle {
+        color: #9ca3af;
+        font-size: 0.875rem;
+      }
+    }
+
+    .results-list {
+      margin-top: 1rem;
+    }
+  }
+} 

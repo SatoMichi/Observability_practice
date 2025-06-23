@@ -1,0 +1,20 @@
+@use './index.scss';
+
+.app {
+  min-height: 100vh;
+  background-color: #f9fafb;
+
+  .main-content {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 1.5rem;
+
+    @media (min-width: 640px) {
+      padding: 1.5rem;
+    }
+
+    @media (min-width: 1024px) {
+      padding: 2rem;
+    }
+  }
+} 

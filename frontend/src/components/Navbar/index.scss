@@ -1,0 +1,59 @@
+@use '../../index.scss';
+
+.navbar {
+  background-color: white;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid #e5e7eb;
+
+  &__container {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 0 1rem;
+
+    @media (min-width: 640px) {
+      padding: 0 1.5rem;
+    }
+
+    @media (min-width: 1024px) {
+      padding: 0 2rem;
+    }
+  }
+
+  &__content {
+    display: flex;
+    justify-content: space-between;
+    height: 4rem;
+  }
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    
+    a {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #111827;
+      text-decoration: none;
+    }
+  }
+
+  &__nav {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+
+    a {
+      color: #6b7280;
+      text-decoration: none;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.2s ease-in-out;
+
+      &:hover {
+        color: #111827;
+      }
+    }
+  }
+} 

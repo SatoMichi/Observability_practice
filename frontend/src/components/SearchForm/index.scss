@@ -1,0 +1,62 @@
+@use '../../index.scss';
+
+.search-form {
+  @extend .card;
+  margin-bottom: 2rem;
+  padding: 2rem;
+
+  h1 {
+    margin: 0 0 1.5rem;
+    color: #111827;
+    font-size: 1.875rem;
+    font-weight: 700;
+  }
+
+  .form-group {
+    label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 0.5rem;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 0.75rem;
+
+      input {
+        @extend .form-input;
+        flex: 1;
+      }
+
+      button {
+        @extend .btn;
+        background-color: #2563eb;
+        color: white;
+        padding: 0.5rem 1.5rem;
+        border-radius: 0.5rem;
+        white-space: nowrap;
+
+        &:hover:not(:disabled) {
+          background-color: #1d4ed8;
+        }
+
+        &:disabled {
+          background-color: #9ca3af;
+          cursor: not-allowed;
+        }
+      }
+    }
+  }
+
+  @media (max-width: 640px) {
+    .form-group .input-group {
+      flex-direction: column;
+
+      button {
+        width: 100%;
+      }
+    }
+  }
+} 

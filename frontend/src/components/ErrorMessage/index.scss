@@ -1,0 +1,35 @@
+@use '../../index.scss';
+
+.error-message {
+  display: flex;
+  align-items: flex-start;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+
+  &__icon {
+    flex-shrink: 0;
+    margin-right: 0.75rem;
+    font-size: 1.25rem;
+  }
+
+  &__content {
+    flex: 1;
+  }
+
+  &__title {
+    margin: 0 0 0.5rem;
+    color: #991b1b;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  &__text {
+    margin: 0;
+    color: #dc2626;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+} 

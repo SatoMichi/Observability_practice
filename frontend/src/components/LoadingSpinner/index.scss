@@ -1,0 +1,36 @@
+@use '../../index.scss';
+
+.loading-spinner-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 16rem;
+}
+
+.loading-spinner {
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #2563eb;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+
+  &--sm {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  &--md {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  &--lg {
+    width: 3rem;
+    height: 3rem;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+} 
