@@ -8,7 +8,7 @@ function Navbar() {
         <div className="navbar__content">
           <div className="navbar__brand">
             <Link to="/">
-              📚 全文検索アプリ
+              📚 Gutenberg Explorer
             </Link>
           </div>
           <div className="navbar__nav">

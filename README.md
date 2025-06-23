@@ -1,8 +1,58 @@
-# 全文検索アプリケーション
+# 📚 Gutenberg Explorer
 
-[![Build and Push](https://github.com/SatoMichi/Observability_practice/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/SatoMichi/Observability_practice/actions/workflows/build-and-push.yml)
+プロジェクト・グーテンベルクの書籍を検索・閲覧できるモダンなWebアプリケーションです。
 
-React + FastAPI構成の全文検索アプリケーションです。NLTK Gutenbergコーパスを使用してTF-IDFベースの検索機能を提供します。
+## 機能
+- 書籍の全文検索
+- 書籍一覧の閲覧
+- 自然言語処理による高度な検索
+- レスポンシブデザイン
+
+## 技術スタック
+- **フロントエンド**: React + Vite
+- **バックエンド**: FastAPI (Python)
+- **検索エンジン**: NLTK + scikit-learn
+- **インフラ**: Docker + Kubernetes
+
+## セットアップ
+
+### 前提条件
+- Docker
+- Docker Compose
+
+### 開発環境での起動
+```bash
+# プロジェクトをクローン
+git clone <repository-url>
+cd Observability_practice
+
+# Docker Composeで起動
+docker-compose up --build
+
+# アプリケーションにアクセス
+open http://localhost:3000
+```
+
+### 本番環境デプロイ（Kubernetes）
+```bash
+# Kubernetesクラスターにデプロイ
+kubectl apply -f k8s/
+
+# ポートフォワードでアクセス
+kubectl port-forward service/frontend-service 3000:80
+```
+
+## API仕様
+- `GET /` - ヘルスチェック
+- `GET /books` - 書籍一覧取得
+- `POST /search` - 書籍検索
+
+## 監視とオブザーバビリティ
+このプロジェクトは学習目的で作成されており、以下の要素を含んでいます：
+- ログ出力
+- メトリクス収集
+- トレーシング
+- モニタリング
 
 ## 🚀 機能
 
