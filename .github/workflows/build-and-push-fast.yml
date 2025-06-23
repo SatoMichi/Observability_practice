@@ -53,6 +53,9 @@ jobs:
         push: true
         tags: ${{ steps.meta-backend.outputs.tags }}
         labels: ${{ steps.meta-backend.outputs.labels }}
+        # BuildKit最適化オプション
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
         # キャッシュを一時的に無効化（GitHub Actionsサービス障害対応）
         # cache-from: type=gha
         # cache-to: type=gha,mode=max

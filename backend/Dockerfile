@@ -1,26 +1,43 @@
-# Python 3.11スリム版（軽量）
-FROM python:3.11-slim as base
+# ========== Builder Stage ==========
+FROM python:3.11-slim as builder
 
 WORKDIR /app
 
-# システム依存関係の最適化インストール
+# システム依存関係（ビルド用）
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc curl && \
-    apt-get clean && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        && \
     rm -rf /var/lib/apt/lists/*
 
-# Python依存関係（キャッシュ最適化）
+# Python依存関係のビルド
 COPY requirements.txt .
-RUN pip install --no-cache-dir --disable-pip-version-check --no-warn-script-location \
-    -r requirements.txt
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
 
-# NLTKデータのダウンロード（キャッシュレイヤー分離）
+# ========== Runtime Stage ==========
+FROM python:3.11-slim as runtime
+
+WORKDIR /app
+
+# ランタイム用の最小システム依存関係
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# ビルド済みwheelをコピーしてインストール
+COPY --from=builder /app/wheels /wheels
+COPY requirements.txt .
+RUN pip install --no-cache-dir --no-index --find-links /wheels -r requirements.txt && \
+    rm -rf /wheels
+
+# NLTKデータのダウンロード
 RUN python -c "import nltk; nltk.download('gutenberg', quiet=True); nltk.download('punkt', quiet=True); nltk.download('stopwords', quiet=True)"
 
-# アプリケーションコード（最後にコピーでキャッシュ効率向上）
+# アプリケーションコード
 COPY . .
 
-# 非特権ユーザーでの実行（セキュリティ向上）
+# 非特権ユーザー
 RUN adduser --disabled-password --gecos '' appuser && \
     chown -R appuser:appuser /app
 USER appuser
