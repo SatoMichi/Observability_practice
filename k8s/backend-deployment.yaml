@@ -5,6 +5,9 @@ metadata:
   namespace: satomichi
   labels:
     app: backend
+    tags.datadoghq.com/service: "search-backend"
+    tags.datadoghq.com/env: "production"
+    tags.datadoghq.com/version: "1.0.0"
 spec:
   replicas: 2
   selector:
@@ -14,6 +17,11 @@ spec:
     metadata:
       labels:
         app: backend
+        tags.datadoghq.com/service: "search-backend"
+        tags.datadoghq.com/env: "production"
+        tags.datadoghq.com/version: "1.0.0"
+      annotations:
+        ad.datadoghq.com/backend.logs: '[{"source":"python","service":"search-backend","log_processing_rules":[{"type":"multi_line","name":"log_start_with_date","pattern":"\\d{4}-\\d{2}-\\d{2}"}]}]'
     spec:
       imagePullSecrets:
       - name: ghcr-secret
@@ -26,6 +34,14 @@ spec:
         env:
         - name: PYTHONUNBUFFERED
           value: "1"
+        - name: DD_SERVICE
+          value: "search-backend"
+        - name: DD_ENV
+          value: "production"
+        - name: DD_VERSION
+          value: "1.0.0"
+        - name: DD_LOGS_INJECTION
+          value: "true"
         readinessProbe:
           httpGet:
             path: /books
@@ -57,6 +73,9 @@ metadata:
   namespace: satomichi
   labels:
     app: backend
+    tags.datadoghq.com/service: "search-backend"
+    tags.datadoghq.com/env: "production"
+    tags.datadoghq.com/version: "1.0.0"
 spec:
   selector:
     app: backend

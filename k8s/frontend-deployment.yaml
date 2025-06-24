@@ -5,6 +5,9 @@ metadata:
   namespace: satomichi
   labels:
     app: frontend
+    tags.datadoghq.com/service: "search-frontend"
+    tags.datadoghq.com/env: "production"
+    tags.datadoghq.com/version: "1.0.0"
 spec:
   replicas: 2
   selector:
@@ -14,6 +17,11 @@ spec:
     metadata:
       labels:
         app: frontend
+        tags.datadoghq.com/service: "search-frontend"
+        tags.datadoghq.com/env: "production"
+        tags.datadoghq.com/version: "1.0.0"
+      annotations:
+        ad.datadoghq.com/frontend.logs: '[{"source":"nginx","service":"search-frontend"}]'
     spec:
       imagePullSecrets:
       - name: ghcr-secret
@@ -23,6 +31,13 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 80
+        env:
+        - name: DD_SERVICE
+          value: "search-frontend"
+        - name: DD_ENV
+          value: "production"
+        - name: DD_VERSION
+          value: "1.0.0"
         readinessProbe:
           httpGet:
             path: /health
@@ -54,6 +69,9 @@ metadata:
   namespace: satomichi
   labels:
     app: frontend
+    tags.datadoghq.com/service: "search-frontend"
+    tags.datadoghq.com/env: "production"
+    tags.datadoghq.com/version: "1.0.0"
 spec:
   selector:
     app: frontend
