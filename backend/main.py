@@ -1,74 +1,39 @@
-import nltk
-import numpy as np
+import json
+import string
+import time
+from typing import List, Dict, Any
+
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import re
-import string
-from typing import List, Dict, Any
-import uvicorn
-import logging
-import time
-import json
-from datetime import datetime, timezone
 
-# NLTK データのダウンロード
+# NLTKの初期設定
+import nltk
 try:
-    nltk.data.find('corpora/gutenberg')
+    nltk.data.find('tokenizers/punkt')
 except LookupError:
-    nltk.download('gutenberg')
-    
+    nltk.download('punkt')
+
 try:
     nltk.data.find('corpora/stopwords')
 except LookupError:
     nltk.download('stopwords')
 
 try:
-    nltk.data.find('tokenizers/punkt')
+    nltk.data.find('corpora/gutenberg')
 except LookupError:
-    nltk.download('punkt')
+    nltk.download('gutenberg')
 
 from nltk.corpus import gutenberg, stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
-import structlog
 
-# JSON構造化ログの設定
-def json_formatter(logger, name, event_dict):
-    """JSON形式でログを出力するフォーマッター"""
-    # タイムスタンプをISO 8601形式で追加
-    timestamp = datetime.now(timezone.utc).isoformat()
-    
-    # 基本構造
-    log_record = {
-        "timestamp": timestamp,
-        "level": event_dict.get("level", "INFO").upper(),
-        "event": event_dict.get("event", "unknown"),
-        "message": event_dict.get("message", "")
-    }
-    
-    # 追加フィールドをマージ
-    for key, value in event_dict.items():
-        if key not in ["level", "event", "message"]:
-            log_record[key] = value
-    
-    return json.dumps(log_record, ensure_ascii=False)
+# JSON構造化ログシステムをインポート
+from log_system import setup_logger
 
-# structlogの設定
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        json_formatter,
-    ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
-
-logger = structlog.get_logger("search_app")
+# ロガーの設定
+logger = setup_logger("search_app")
 
 app = FastAPI(title="全文検索API")
 
@@ -132,57 +97,48 @@ async def startup_event():
     """アプリ起動時にデータの読み込みとTF-IDFベクトル化を実行"""
     global books_data, tfidf_vectorizer, tfidf_matrix, processed_texts
     
-    start_time = time.time()
-    logger.info("アプリケーション起動開始", event="startup")
-    logger.info("書籍データを読み込み中", event="data_loading")
-    
-    # Gutenbergコーパスから書籍を取得
-    fileids = gutenberg.fileids()
-    logger.info("利用可能な書籍数を確認", event="books_discovery", books_available=len(fileids))
-    
-    for i, fileid in enumerate(fileids):
-        try:
-            raw_text = gutenberg.raw(fileid)
-            processed_text = preprocess_text(raw_text)
-            
-            # 著者とタイトルを推定（ファイル名から）
-            if '-' in fileid:
-                parts = fileid.replace('.txt', '').split('-')
-                author = parts[0].replace('_', ' ').title()
-                title = '-'.join(parts[1:]).replace('_', ' ').title() if len(parts) > 1 else fileid
-            else:
-                title = fileid.replace('.txt', '').replace('_', ' ').title()
-                author = "Unknown"
-            
-            books_data[fileid] = {
-                'id': fileid,
-                'title': title,
-                'author': author,
-                'raw_text': raw_text,
-                'word_count': len(raw_text.split())
-            }
-            processed_texts[fileid] = processed_text
-            
-            if (i + 1) % 5 == 0:  # 5冊ごとに進捗をログ出力
-                logger.info("書籍読み込み進捗", event="loading_progress", books_loaded=i+1, total_books=len(fileids))
-            
-        except Exception as e:
-            logger.error("書籍処理エラー", event="book_processing_error", book_id=fileid, error=str(e))
-    
-    load_time = time.time() - start_time
-    logger.info("書籍読み込み完了", event="loading_complete", books_count=len(books_data), duration_seconds=round(load_time, 2))
-    
-    # TF-IDFベクトル化
-    vectorize_start = time.time()
-    logger.info("TF-IDFベクトル化を実行中", event="tfidf_start")
-    texts_list = list(processed_texts.values())
-    tfidf_vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
-    tfidf_matrix = tfidf_vectorizer.fit_transform(texts_list)
-    
-    vectorize_time = time.time() - vectorize_start
-    total_time = time.time() - start_time
-    logger.info("TF-IDFベクトル化完了", event="tfidf_complete", duration_seconds=round(vectorize_time, 2))
-    logger.info("アプリケーション起動完了", event="startup_complete", total_duration_seconds=round(total_time, 2), books_count=len(books_data))
+    try:
+        start_time = time.time()
+        logger.info("アプリケーション起動開始", extra={"event_type": "startup"})
+        
+        # Gutenbergコーパスから書籍を取得
+        fileids = gutenberg.fileids()
+        
+        for i, fileid in enumerate(fileids):
+            try:
+                raw_text = gutenberg.raw(fileid)
+                processed_text = preprocess_text(raw_text)
+                
+                # 著者とタイトルを推定（ファイル名から）
+                if '-' in fileid:
+                    parts = fileid.replace('.txt', '').split('-')
+                    author = parts[0].replace('_', ' ').title()
+                    title = '-'.join(parts[1:]).replace('_', ' ').title() if len(parts) > 1 else fileid
+                else:
+                    title = fileid.replace('.txt', '').replace('_', ' ').title()
+                    author = "Unknown"
+                
+                books_data[fileid] = {
+                    'id': fileid,
+                    'title': title,
+                    'author': author,
+                    'raw_text': raw_text,
+                    'word_count': len(raw_text.split())
+                }
+                processed_texts[fileid] = processed_text
+                
+            except Exception as e:
+                logger.error("書籍処理エラー", extra={"event_type": "book_processing_error", "book_id": fileid, "error": str(e)})
+        
+        # TF-IDFベクトル化
+        texts_list = list(processed_texts.values())
+        tfidf_vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
+        tfidf_matrix = tfidf_vectorizer.fit_transform(texts_list)
+        
+        total_time = time.time() - start_time
+        logger.info("アプリケーション起動完了", extra={"event_type": "startup_complete", "duration_seconds": round(total_time, 2), "books_count": len(books_data)})
+    except Exception as e:
+        logger.error("起動エラー", extra={"event_type": "startup_error", "error": str(e)})
 
 @app.get("/")
 async def root():
@@ -192,7 +148,6 @@ async def root():
 async def get_books():
     """全書籍の情報を返す"""
     start_time = time.time()
-    logger.info("書籍一覧のリクエストを受信", event="api_request", endpoint="/books")
     
     books_list = []
     for book_id, book_info in books_data.items():
@@ -204,7 +159,7 @@ async def get_books():
         })
     
     response_time = time.time() - start_time
-    logger.info("書籍一覧レスポンス完了", event="api_response", endpoint="/books", response_count=len(books_list), duration_ms=round(response_time * 1000, 3))
+    logger.info("書籍一覧API", extra={"event_type": "api_response", "endpoint": "/books", "response_count": len(books_list), "duration_ms": round(response_time * 1000, 3)})
     
     return {"books": books_list}
 
@@ -276,25 +231,17 @@ def perform_search(query: str, search_method: str = "tfidf", **kwargs) -> List[D
 async def search_books(q: str):
     """検索クエリに基づいて書籍を検索"""
     start_time = time.time()
-    logger.info("検索リクエスト受信", event="search_request", query=q, endpoint="/search")
     
     if not q or not q.strip():
-        logger.warning("空の検索クエリが送信されました", event="search_validation_error", query=q)
+        logger.warning("空の検索クエリ", extra={"event_type": "search_validation_error", "query": q})
         raise HTTPException(status_code=400, detail="検索クエリが空です")
     
     try:
         # 検索実行
-        search_start = time.time()
         results = perform_search(q, search_method="tfidf")
-        search_time = time.time() - search_start
         
         response_time = time.time() - start_time
-        logger.info("検索完了", event="search_complete", query=q, results_count=len(results), search_duration_ms=round(search_time * 1000, 3), total_duration_ms=round(response_time * 1000, 3))
-        
-        # 上位結果の詳細をログ出力
-        if results:
-            top_result = results[0]
-            logger.info("最高スコア結果", event="search_top_result", query=q, top_title=top_result['title'], top_author=top_result['author'], top_score=round(top_result['score'], 4))
+        logger.info("検索API", extra={"event_type": "search_complete", "query": q, "results_count": len(results), "duration_ms": round(response_time * 1000, 3)})
         
         return {
             'query': q,
@@ -303,7 +250,7 @@ async def search_books(q: str):
         }
     except Exception as e:
         error_time = time.time() - start_time
-        logger.error("検索エラー", event="search_error", query=q, error=str(e), duration_ms=round(error_time * 1000, 3))
+        logger.error("検索エラー", extra={"event_type": "search_error", "query": q, "error": str(e), "duration_ms": round(error_time * 1000, 3)})
         raise HTTPException(status_code=500, detail=f"検索エラー: {str(e)}")
 
 if __name__ == "__main__":
