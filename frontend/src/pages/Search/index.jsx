@@ -28,14 +28,28 @@ function Search() {
 
     const startTime = Date.now()
     console.log(`[Frontend] 検索開始: "${searchQuery}"`)
+    console.log(`[Frontend] API_BASE_URL: "${API_BASE_URL}"`)
 
     try {
       setLoading(true)
       setError(null)
       setSearchPerformed(true)
       
-      const url = new URL(`${API_BASE_URL}/search`)
-      url.searchParams.append('q', searchQuery)
+      // URLの構築を修正 - 相対パスと絶対パスの両方に対応
+      let url
+      if (API_BASE_URL.startsWith('http')) {
+        // 開発環境: 絶対URL
+        url = new URL(`${API_BASE_URL}/search`)
+      } else {
+        // 本番環境: 相対パス
+        url = `${API_BASE_URL}/search?q=${encodeURIComponent(searchQuery)}`
+      }
+      
+      if (API_BASE_URL.startsWith('http')) {
+        url.searchParams.append('q', searchQuery)
+      }
+      
+      console.log(`[Frontend] リクエストURL: "${url}"`)
       
       const response = await fetch(url)
       if (!response.ok) {
