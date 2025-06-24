@@ -8,7 +8,7 @@ function SearchForm({ query, onQueryChange, onSubmit, loading }) {
 
   return (
     <div className="search-form">
-      <h1>全文検索</h1>
+      <h1>📚 Gutenberg Explorer</h1>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label htmlFor="search">
