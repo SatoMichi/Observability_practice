@@ -9,10 +9,10 @@ echo "🚀 Deploying latest images from GitHub Container Registry..."
 echo "📦 Applying Kubernetes deployments..."
 kubectl apply -f k8s/backend-deployment.yaml && kubectl apply -f k8s/frontend-deployment.yaml
 
-# 方法2: イメージの強制更新（より高速）
-echo "🔄 Force updating container images..."
-kubectl set image deployment/backend backend=ghcr.io/satomichi/observability_practice-backend:latest -n satomichi && \
-kubectl set image deployment/frontend frontend=ghcr.io/satomichi/observability_practice-frontend:latest -n satomichi
+# 方法2: デプロイメントの強制再起動（最新イメージを確実にプル）
+echo "🔄 Force restarting deployments to pull latest images..."
+kubectl rollout restart deployment/backend -n satomichi && \
+kubectl rollout restart deployment/frontend -n satomichi
 
 # ロールアウト状況の確認
 echo "⏳ Waiting for rollout to complete..."
@@ -23,4 +23,4 @@ echo "✅ Deployment completed!"
 
 # Pod の状況確認
 echo "📊 Current pod status:"
-kubectl get pods -n satomichi -l app=backend,app=frontend 
+kubectl get pods -n satomichi 
