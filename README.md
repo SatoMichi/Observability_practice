@@ -142,6 +142,21 @@ open http://localhost:3000
 - **解決**: npm installによる同期修復
 - **学習**: 依存関係管理のベストプラクティス
 
+#### 5. **UI/UX改善とブランディング**
+- **課題**: 汎用的な「全文検索」タイトルでブランド性が低い
+- **解決**: 「📚 Gutenberg Explorer」に変更し中央配置でアクセシビリティ向上
+- **学習**: ユーザー体験とブランディングの重要性
+
+#### 6. **Kubernetesサービスディスカバリー**
+- **課題**: Docker ComposeとKubernetesでサービス名が異なり検索API失敗
+- **解決**: nginx設定を`backend` → `backend-service`に修正
+- **学習**: 環境間でのネットワーク設定の差異と統一性の重要性
+
+#### 7. **デプロイメント戦略の改善**
+- **課題**: `kubectl set image`で同じ`:latest`タグ指定時、新イメージがプルされない
+- **解決**: `kubectl rollout restart`を使用して確実なイメージ更新
+- **学習**: Kubernetesデプロイメントの信頼性向上テクニック
+
 ### 🐛 トラブルシューティング経験
 
 #### **ImagePullBackOff問題**
@@ -163,6 +178,20 @@ open http://localhost:3000
 エラー: failed to resolve import "axios"
 原因: package.jsonからaxios削除、コードで使用継続
 解決: Fetch APIへ移行
+```
+
+#### **Kubernetes API接続エラー**
+```
+エラー: 検索に失敗しました (フロントエンド)
+原因: nginx proxy_pass設定でDocker Compose用サービス名使用
+解決: backend → backend-service に修正
+```
+
+#### **デプロイメント更新されない問題**
+```
+エラー: 新しいコード変更がKubernetesで反映されない
+原因: kubectl set imageで同じ:latestタグ → Kubernetesがプル不要と判断
+解決: kubectl rollout restart使用で強制更新
 ```
 
 ### 🏗 アーキテクチャの進化
@@ -191,6 +220,16 @@ open http://localhost:3000
 ### デプロイ速度向上
 - **プラットフォーム一致**: イメージプル高速化
 - **並列ビルド**: CI/CD時間短縮
+
+### UI/UX向上
+- **ブランディング強化**: 「📚 Gutenberg Explorer」で視認性向上
+- **アクセシビリティ**: 中央配置でレスポンシブ対応
+- **検索機能改善**: Kubernetesでの安定したAPI接続
+
+### 運用改善
+- **確実なデプロイ**: `kubectl rollout restart`で100%更新保証
+- **環境統一**: Docker Compose / Kubernetes間の設定整合性
+- **自動化強化**: GitHub Actions → GHCR → Kubernetes完全自動化
 
 ## 🔍 監視とオブザーバビリティ
 
