@@ -133,12 +133,12 @@ async def startup_event():
     global books_data, tfidf_vectorizer, tfidf_matrix, processed_texts
     
     start_time = time.time()
-    logger.info("アプリケーション起動開始", event="startup", message="アプリケーション起動開始")
-    logger.info("書籍データを読み込み中", event="data_loading", message="書籍データを読み込み中")
+    logger.info("アプリケーション起動開始", event="startup")
+    logger.info("書籍データを読み込み中", event="data_loading")
     
     # Gutenbergコーパスから書籍を取得
     fileids = gutenberg.fileids()
-    logger.info("利用可能な書籍数を確認", event="books_discovery", message="利用可能な書籍数を確認", books_available=len(fileids))
+    logger.info("利用可能な書籍数を確認", event="books_discovery", books_available=len(fileids))
     
     for i, fileid in enumerate(fileids):
         try:
@@ -164,25 +164,25 @@ async def startup_event():
             processed_texts[fileid] = processed_text
             
             if (i + 1) % 5 == 0:  # 5冊ごとに進捗をログ出力
-                logger.info("書籍読み込み進捗", event="loading_progress", message="書籍読み込み進捗", books_loaded=i+1, total_books=len(fileids))
+                logger.info("書籍読み込み進捗", event="loading_progress", books_loaded=i+1, total_books=len(fileids))
             
         except Exception as e:
-            logger.error("書籍処理エラー", event="book_processing_error", message="書籍処理エラー", book_id=fileid, error=str(e))
+            logger.error("書籍処理エラー", event="book_processing_error", book_id=fileid, error=str(e))
     
     load_time = time.time() - start_time
-    logger.info("書籍読み込み完了", event="loading_complete", message="書籍読み込み完了", books_count=len(books_data), duration_seconds=round(load_time, 2))
+    logger.info("書籍読み込み完了", event="loading_complete", books_count=len(books_data), duration_seconds=round(load_time, 2))
     
     # TF-IDFベクトル化
     vectorize_start = time.time()
-    logger.info("TF-IDFベクトル化を実行中", event="tfidf_start", message="TF-IDFベクトル化を実行中")
+    logger.info("TF-IDFベクトル化を実行中", event="tfidf_start")
     texts_list = list(processed_texts.values())
     tfidf_vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
     tfidf_matrix = tfidf_vectorizer.fit_transform(texts_list)
     
     vectorize_time = time.time() - vectorize_start
     total_time = time.time() - start_time
-    logger.info("TF-IDFベクトル化完了", event="tfidf_complete", message="TF-IDFベクトル化完了", duration_seconds=round(vectorize_time, 2))
-    logger.info("アプリケーション起動完了", event="startup_complete", message="アプリケーション起動完了", total_duration_seconds=round(total_time, 2), books_count=len(books_data))
+    logger.info("TF-IDFベクトル化完了", event="tfidf_complete", duration_seconds=round(vectorize_time, 2))
+    logger.info("アプリケーション起動完了", event="startup_complete", total_duration_seconds=round(total_time, 2), books_count=len(books_data))
 
 @app.get("/")
 async def root():
@@ -192,7 +192,7 @@ async def root():
 async def get_books():
     """全書籍の情報を返す"""
     start_time = time.time()
-    logger.info("書籍一覧のリクエストを受信", event="api_request", message="書籍一覧のリクエストを受信", endpoint="/books")
+    logger.info("書籍一覧のリクエストを受信", event="api_request", endpoint="/books")
     
     books_list = []
     for book_id, book_info in books_data.items():
@@ -204,7 +204,7 @@ async def get_books():
         })
     
     response_time = time.time() - start_time
-    logger.info("書籍一覧レスポンス完了", event="api_response", message="書籍一覧レスポンス完了", endpoint="/books", response_count=len(books_list), duration_ms=round(response_time * 1000, 3))
+    logger.info("書籍一覧レスポンス完了", event="api_response", endpoint="/books", response_count=len(books_list), duration_ms=round(response_time * 1000, 3))
     
     return {"books": books_list}
 
@@ -276,10 +276,10 @@ def perform_search(query: str, search_method: str = "tfidf", **kwargs) -> List[D
 async def search_books(q: str):
     """検索クエリに基づいて書籍を検索"""
     start_time = time.time()
-    logger.info("検索リクエスト受信", event="search_request", message="検索リクエスト受信", query=q, endpoint="/search")
+    logger.info("検索リクエスト受信", event="search_request", query=q, endpoint="/search")
     
     if not q or not q.strip():
-        logger.warning("空の検索クエリが送信されました", event="search_validation_error", message="空の検索クエリが送信されました", query=q)
+        logger.warning("空の検索クエリが送信されました", event="search_validation_error", query=q)
         raise HTTPException(status_code=400, detail="検索クエリが空です")
     
     try:
@@ -289,12 +289,12 @@ async def search_books(q: str):
         search_time = time.time() - search_start
         
         response_time = time.time() - start_time
-        logger.info("検索完了", event="search_complete", message="検索完了", query=q, results_count=len(results), search_duration_ms=round(search_time * 1000, 3), total_duration_ms=round(response_time * 1000, 3))
+        logger.info("検索完了", event="search_complete", query=q, results_count=len(results), search_duration_ms=round(search_time * 1000, 3), total_duration_ms=round(response_time * 1000, 3))
         
         # 上位結果の詳細をログ出力
         if results:
             top_result = results[0]
-            logger.info("最高スコア結果", event="search_top_result", message="最高スコア結果", query=q, top_title=top_result['title'], top_author=top_result['author'], top_score=round(top_result['score'], 4))
+            logger.info("最高スコア結果", event="search_top_result", query=q, top_title=top_result['title'], top_author=top_result['author'], top_score=round(top_result['score'], 4))
         
         return {
             'query': q,
@@ -303,7 +303,7 @@ async def search_books(q: str):
         }
     except Exception as e:
         error_time = time.time() - start_time
-        logger.error("検索エラー", event="search_error", message="検索エラー", query=q, error=str(e), duration_ms=round(error_time * 1000, 3))
+        logger.error("検索エラー", event="search_error", query=q, error=str(e), duration_ms=round(error_time * 1000, 3))
         raise HTTPException(status_code=500, detail=f"検索エラー: {str(e)}")
 
 if __name__ == "__main__":
