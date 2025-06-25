@@ -4,7 +4,7 @@ import time
 from typing import List, Dict, Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -16,6 +16,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
+from opentelemetry import propagate
 import logging
 
 # NLTKの初期設定
@@ -51,6 +52,14 @@ class SimpleConsoleSpanExporter:
             print(f"   Trace ID: {format(span.context.trace_id, '032x')}")
             print(f"   Span ID: {format(span.context.span_id, '016x')}")
             print(f"   Duration: {(span.end_time - span.start_time) / 1_000_000:.2f} ms")
+            
+            # 分散トレース情報の表示
+            distributed_received = span.attributes.get('distributed.trace.received', False)
+            if distributed_received:
+                traceparent = span.attributes.get('distributed.trace.traceparent', '')
+                print(f"   🔗 Distributed Trace: Connected from Frontend")
+                print(f"   📡 Traceparent: {traceparent}")
+            
             if span.attributes:
                 print(f"   Attributes: {dict(span.attributes)}")
             print()
@@ -380,11 +389,30 @@ def perform_search(query: str, search_method: str = "tfidf", **kwargs) -> List[D
         raise ValueError(f"Unsupported search method: {search_method}")
 
 @app.get("/search")
-async def search_books(q: str):
+async def search_books(q: str, request: Request):
     """検索クエリに基づいて書籍を検索"""
-    with tracer.start_as_current_span("search_api") as span:
+    
+    # HTTPヘッダーからトレースコンテキストを抽出
+    context = propagate.extract(dict(request.headers))
+    
+    # 抽出されたコンテキストを使用してSpanを開始
+    with tracer.start_as_current_span("search_api", context=context) as span:
         span.set_attribute("http.route", "/search")
         span.set_attribute("search.query", q)
+        
+        # 分散トレース情報をログ出力
+        traceparent = request.headers.get('traceparent')
+        tracestate = request.headers.get('tracestate')
+        
+        if traceparent:
+            print(f"🔗 Received Distributed Trace: {traceparent}")
+            if tracestate:
+                print(f"   Trace State: {tracestate}")
+            span.set_attribute("distributed.trace.received", True)
+            span.set_attribute("distributed.trace.traceparent", traceparent)
+        else:
+            print("⚠️  No trace context received from frontend")
+            span.set_attribute("distributed.trace.received", False)
         
         start_time = time.time()
         

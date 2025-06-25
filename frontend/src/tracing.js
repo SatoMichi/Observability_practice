@@ -42,6 +42,8 @@ class SimpleFrontendTracer {
     }
 
     return {
+      traceId: span.traceId,
+      spanId: span.spanId,
       end: () => this.endSpan(spanId),
       setAttributes: (attrs) => this.setAttributes(spanId, attrs),
       recordException: (error) => this.recordException(spanId, error),
@@ -142,11 +144,26 @@ class SimpleFrontendTracer {
   }
 
   generateSpanId() {
-    return Math.random().toString(16).slice(2, 18);
+    return Math.random().toString(16).slice(2, 18).padStart(16, '0');
   }
 
   generateTraceId() {
-    return Math.random().toString(16).slice(2, 34);
+    return Math.random().toString(16).slice(2, 34).padStart(32, '0');
+  }
+  
+  /**
+   * W3C Trace Context準拠のtraceparentヘッダーを生成
+   * Format: version-trace_id-parent_id-trace_flags
+   * 例: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+   */
+  generateTraceParent(traceId, spanId) {
+    const version = '00';
+    const traceFlags = '01'; // sampled
+    
+    // デバッグログを削除（本番環境用）
+    // console.log(`🔧 generateTraceParent called with:`, { traceId, spanId });
+    
+    return `${version}-${traceId}-${spanId}-${traceFlags}`;
   }
 }
 
@@ -159,34 +176,80 @@ let globalTracer = null;
 export function initializeTracing() {
   globalTracer = new SimpleFrontendTracer();
   
-  // Fetchの自動計装（シンプル版）
+  // Fetchの自動計装（分散トレース対応版）
   if (typeof window !== 'undefined' && window.fetch) {
     const originalFetch = window.fetch;
     
     window.fetch = async function(url, options = {}) {
-      const span = globalTracer.startSpan('http_request', {
+      // 新しいSpanを直接作成してIDを取得
+      const spanId = globalTracer.generateSpanId();
+      const traceId = globalTracer.generateTraceId();
+      
+      const span = {
+        name: 'http_request',
+        spanId: spanId,
+        traceId: traceId,
+        startTime: Date.now(),
+        endTime: null,
         attributes: {
           'http.method': options.method || 'GET',
           'http.url': url.toString(),
           'component': 'fetch'
-        }
-      });
+        },
+        status: 'OK'
+      };
+
+      globalTracer.currentSpans.set(spanId, span);
+      
+      console.log(`🌐 Frontend Span Started: http_request`);
+      console.log(`   Service: ${globalTracer.serviceName}`);
+      console.log(`   Trace ID: ${traceId}`);
+      console.log(`   Span ID: ${spanId}`);
 
       try {
-        const response = await originalFetch(url, options);
+        // W3C Trace Context ヘッダーを生成（直接値を使用）
+        const traceparent = globalTracer.generateTraceParent(traceId, spanId);
         
-        span.setAttributes({
-          'http.status_code': response.status,
-          'http.status_text': response.statusText,
-          'http.response.success': response.ok
+        // リクエストヘッダーにトレースコンテキストを追加
+        const headers = {
+          ...options.headers,
+          'traceparent': traceparent,
+          'tracestate': `frontend=true,service=${globalTracer.serviceName}`
+        };
+        
+        console.log(`🔗 Distributed Trace Header: ${traceparent}`);
+        console.log(`   Trace ID: ${traceId}`);
+        console.log(`   Span ID: ${spanId}`);
+        
+        const response = await originalFetch(url, {
+          ...options,
+          headers
         });
+        
+        // Spanに属性を追加
+        span.attributes['http.status_code'] = response.status;
+        span.attributes['http.status_text'] = response.statusText;
+        span.attributes['http.response.success'] = response.ok;
+        span.attributes['distributed.trace.propagated'] = true;
 
         return response;
       } catch (error) {
-        span.recordException(error);
+        span.status = 'ERROR';
+        span.attributes['error.name'] = error.name;
+        span.attributes['error.message'] = error.message;
         throw error;
       } finally {
-        span.end();
+        // Spanを終了
+        span.endTime = Date.now();
+        const duration = span.endTime - span.startTime;
+        
+        console.log(`🌐 Frontend Span Ended: http_request`);
+        console.log(`   Duration: ${duration}ms`);
+        console.log(`   Status: ${span.status}`);
+        console.log('');
+        
+        globalTracer.sendSpanToCollector(span, duration);
+        globalTracer.currentSpans.delete(spanId);
       }
     };
   }
@@ -239,14 +302,16 @@ export function createSpan(name, fn, attributes = {}) {
 export function getTracer() {
   if (!globalTracer) {
     console.warn('Tracer not initialized. Call initializeTracing() first.');
-    return {
-      startSpan: () => ({
-        end: () => {},
-        setAttributes: () => {},
-        recordException: () => {},
-        setStatus: () => {}
-      })
-    };
+      return {
+    startSpan: () => ({
+      traceId: 'unknown',
+      spanId: 'unknown',
+      end: () => {},
+      setAttributes: () => {},
+      recordException: () => {},
+      setStatus: () => {}
+    })
+  };
   }
   return globalTracer;
 } 
