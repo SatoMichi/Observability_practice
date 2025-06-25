@@ -1,0 +1,73 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  
+  # バックエンドからの直接受信
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+  
+  # リソース属性の追加
+  resource:
+    attributes:
+      - key: service.name
+        value: observability-practice
+        action: upsert
+      - key: environment
+        value: development
+        action: upsert
+
+exporters:
+  # コンソール出力（デバッグ用）
+  debug:
+    verbosity: detailed
+  
+  # Datadog エクスポーター（一時的にコメントアウト）
+  # datadog:
+  #   api:
+  #     site: datadoghq.com
+  #     key: ${DD_API_KEY}
+  #   
+  #   traces:
+  #     span_name_remappings:
+  #       database: db.operation
+  #       http: http.method
+  #   
+  #   hostname: observability-practice-host
+  #   
+  #   host_metadata:
+  #     tags:
+  #       - project:observability-practice
+  #       - environment:development
+
+  # OTLP エクスポーター（汎用）
+  otlp:
+    endpoint: "http://localhost:4317"
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp, jaeger]
+      processors: [resource, batch]
+      exporters: [debug]  # DataDogを一時的に無効化
+  
+  # ヘルスチェック
+  extensions: [health_check]
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133 

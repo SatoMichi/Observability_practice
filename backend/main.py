@@ -9,6 +9,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# OpenTelemetry imports
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.resources import Resource
+import logging
+
 # NLTKの初期設定
 import nltk
 try:
@@ -32,10 +41,110 @@ from nltk.tokenize import word_tokenize, sent_tokenize
 # JSON構造化ログシステムをインポート
 from log_system import setup_logger
 
+# OpenTelemetryの初期化
+class SimpleConsoleSpanExporter:
+    """簡易的なコンソール出力エクスポーター"""
+    def export(self, spans):
+        for span in spans:
+            print(f"🔍 Span: {span.name}")
+            print(f"   Service: {span.resource.attributes.get('service.name', 'unknown')}")
+            print(f"   Trace ID: {format(span.context.trace_id, '032x')}")
+            print(f"   Span ID: {format(span.context.span_id, '016x')}")
+            print(f"   Duration: {(span.end_time - span.start_time) / 1_000_000:.2f} ms")
+            if span.attributes:
+                print(f"   Attributes: {dict(span.attributes)}")
+            print()
+        return 0
+    
+    def shutdown(self):
+        """エクスポーターのシャットダウン"""
+        print("🔍 Console Span Exporter shutdown")
+        return True
+
+def setup_tracing():
+    """OpenTelemetryトレースの初期化"""
+    import os
+    
+    # 環境に応じたサービス名とリソース設定
+    service_name = os.getenv("OTEL_SERVICE_NAME", "gutenberg-search-api")
+    service_version = os.getenv("DD_VERSION", "1.0.0")
+    environment = os.getenv("DD_ENV", "development")
+    
+    # リソースの設定
+    resource = Resource.create({
+        "service.name": service_name,
+        "service.version": service_version,
+        "deployment.environment": environment
+    })
+    
+    # TracerProviderの設定
+    tracer_provider = TracerProvider(resource=resource)
+    trace.set_tracer_provider(tracer_provider)
+    
+    # エクスポーターの設定
+    # 簡易コンソール出力（開発・デバッグ用）
+    console_exporter = SimpleConsoleSpanExporter()
+    tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+    
+    # Kubernetes環境での分散トレース設定
+    dd_trace_agent_url = os.getenv("DD_TRACE_AGENT_URL")
+    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+    
+    # Datadog環境でのOTLP設定
+    if dd_trace_agent_url:
+        try:
+            # Datadog Agent経由でのトレース送信
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
+            
+            # Datadog Agent OTLPエンドポイント使用
+            dd_otlp_endpoint = dd_trace_agent_url.replace(":8126", ":4318")
+            otlp_exporter = HTTPOTLPSpanExporter(
+                endpoint=f"{dd_otlp_endpoint}/v1/traces",
+                headers={}
+            )
+            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+            print(f"🐕 Datadog OTLP Exporter configured: {dd_otlp_endpoint}")
+            
+        except Exception as e:
+            print(f"⚠️  Datadog OTLP Exporter setup failed: {e}")
+            # フォールバック: 標準OTLPエンドポイント
+            try:
+                from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
+                otlp_exporter = HTTPOTLPSpanExporter(
+                    endpoint=f"{otlp_endpoint}/v1/traces",
+                    headers={}
+                )
+                tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+                print(f"🔗 Fallback OTLP Exporter configured: {otlp_endpoint}")
+            except Exception as fallback_error:
+                print(f"⚠️  Fallback OTLP Exporter setup failed: {fallback_error}")
+                print("   Continuing with console output only...")
+    else:
+        # ローカル環境用の設定
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
+            otlp_exporter = HTTPOTLPSpanExporter(
+                endpoint=f"{otlp_endpoint}/v1/traces",
+                headers={}
+            )
+            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+            print(f"🔗 Local OTLP Exporter configured: {otlp_endpoint}")
+        except Exception as e:
+            print(f"⚠️  Local OTLP Exporter setup failed: {e}")
+            print("   Continuing with console output only...")
+    
+    return trace.get_tracer(__name__)
+
+# トレーサーの初期化
+tracer = setup_tracing()
+
 # ロガーの設定
 logger = setup_logger("search_app")
 
 app = FastAPI(title="全文検索API")
+
+# FastAPIの自動計装を有効化
+FastAPIInstrumentor.instrument_app(app)
 
 # CORS設定
 app.add_middleware(
@@ -97,48 +206,63 @@ async def startup_event():
     """アプリ起動時にデータの読み込みとTF-IDFベクトル化を実行"""
     global books_data, tfidf_vectorizer, tfidf_matrix, processed_texts
     
-    try:
-        start_time = time.time()
-        logger.info("アプリケーション起動開始", extra={"event_type": "startup"})
-        
-        # Gutenbergコーパスから書籍を取得
-        fileids = gutenberg.fileids()
-        
-        for i, fileid in enumerate(fileids):
-            try:
-                raw_text = gutenberg.raw(fileid)
-                processed_text = preprocess_text(raw_text)
+    with tracer.start_as_current_span("app_startup") as span:
+        try:
+            start_time = time.time()
+            logger.info("アプリケーション起動開始", extra={"event_type": "startup"})
+            
+            # Gutenbergコーパスから書籍を取得
+            with tracer.start_as_current_span("load_gutenberg_corpus") as load_span:
+                fileids = gutenberg.fileids()
+                load_span.set_attribute("corpus.total_files", len(fileids))
                 
-                # 著者とタイトルを推定（ファイル名から）
-                if '-' in fileid:
-                    parts = fileid.replace('.txt', '').split('-')
-                    author = parts[0].replace('_', ' ').title()
-                    title = '-'.join(parts[1:]).replace('_', ' ').title() if len(parts) > 1 else fileid
-                else:
-                    title = fileid.replace('.txt', '').replace('_', ' ').title()
-                    author = "Unknown"
+                for i, fileid in enumerate(fileids):
+                    try:
+                        with tracer.start_as_current_span("process_book", attributes={"book.id": fileid}):
+                            raw_text = gutenberg.raw(fileid)
+                            processed_text = preprocess_text(raw_text)
+                            
+                            # 著者とタイトルを推定（ファイル名から）
+                            if '-' in fileid:
+                                parts = fileid.replace('.txt', '').split('-')
+                                author = parts[0].replace('_', ' ').title()
+                                title = '-'.join(parts[1:]).replace('_', ' ').title() if len(parts) > 1 else fileid
+                            else:
+                                title = fileid.replace('.txt', '').replace('_', ' ').title()
+                                author = "Unknown"
+                            
+                            books_data[fileid] = {
+                                'id': fileid,
+                                'title': title,
+                                'author': author,
+                                'raw_text': raw_text,
+                                'word_count': len(raw_text.split())
+                            }
+                            processed_texts[fileid] = processed_text
+                            
+                    except Exception as e:
+                        logger.error("書籍処理エラー", extra={"event_type": "book_processing_error", "book_id": fileid, "error": str(e)})
+            
+            # TF-IDFベクトル化
+            with tracer.start_as_current_span("tfidf_vectorization") as tfidf_span:
+                texts_list = list(processed_texts.values())
+                tfidf_vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
+                tfidf_matrix = tfidf_vectorizer.fit_transform(texts_list)
                 
-                books_data[fileid] = {
-                    'id': fileid,
-                    'title': title,
-                    'author': author,
-                    'raw_text': raw_text,
-                    'word_count': len(raw_text.split())
-                }
-                processed_texts[fileid] = processed_text
-                
-            except Exception as e:
-                logger.error("書籍処理エラー", extra={"event_type": "book_processing_error", "book_id": fileid, "error": str(e)})
-        
-        # TF-IDFベクトル化
-        texts_list = list(processed_texts.values())
-        tfidf_vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
-        tfidf_matrix = tfidf_vectorizer.fit_transform(texts_list)
-        
-        total_time = time.time() - start_time
-        logger.info("アプリケーション起動完了", extra={"event_type": "startup_complete", "duration_seconds": round(total_time, 2), "books_count": len(books_data)})
-    except Exception as e:
-        logger.error("起動エラー", extra={"event_type": "startup_error", "error": str(e)})
+                tfidf_span.set_attribute("tfidf.max_features", 5000)
+                tfidf_span.set_attribute("tfidf.ngram_range", "1,2")
+                tfidf_span.set_attribute("tfidf.texts_count", len(texts_list))
+                tfidf_span.set_attribute("tfidf.matrix_shape", str(tfidf_matrix.shape))
+            
+            total_time = time.time() - start_time
+            span.set_attribute("startup.duration_seconds", round(total_time, 2))
+            span.set_attribute("startup.books_loaded", len(books_data))
+            
+            logger.info("アプリケーション起動完了", extra={"event_type": "startup_complete", "duration_seconds": round(total_time, 2), "books_count": len(books_data)})
+        except Exception as e:
+            span.record_exception(e)
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            logger.error("起動エラー", extra={"event_type": "startup_error", "error": str(e)})
 
 @app.get("/")
 async def root():
@@ -174,38 +298,66 @@ def tfidf_search(query: str, max_results: int = 20, similarity_threshold: float 
     Returns:
         検索結果のリスト
     """
-    # クエリの前処理
-    processed_query = preprocess_text(query)
-    if not processed_query:
-        return []
-    
-    # TF-IDFベクトル化
-    query_vector = tfidf_vectorizer.transform([processed_query])
-    
-    # コサイン類似度計算
-    similarities = cosine_similarity(query_vector, tfidf_matrix).flatten()
-    
-    # 結果の整理
-    results = []
-    book_ids = list(books_data.keys())
-    
-    for i, similarity in enumerate(similarities):
-        if similarity > similarity_threshold:
-            book_id = book_ids[i]
-            book_info = books_data[book_id]
-            snippet = get_snippet(book_info['raw_text'], query)
+    with tracer.start_as_current_span("tfidf_search") as span:
+        span.set_attribute("search.query", query)
+        span.set_attribute("search.max_results", max_results)
+        span.set_attribute("search.similarity_threshold", similarity_threshold)
+        
+        # クエリの前処理
+        with tracer.start_as_current_span("preprocess_query") as preprocess_span:
+            processed_query = preprocess_text(query)
+            preprocess_span.set_attribute("query.original", query)
+            preprocess_span.set_attribute("query.processed", processed_query)
             
-            results.append({
-                'id': book_id,
-                'title': book_info['title'],
-                'author': book_info['author'],
-                'score': float(similarity),
-                'snippet': snippet
-            })
-    
-    # スコア順にソートして上位結果を返す
-    results.sort(key=lambda x: x['score'], reverse=True)
-    return results[:max_results]
+            if not processed_query:
+                span.set_attribute("search.results_count", 0)
+                return []
+        
+        # TF-IDFベクトル化
+        with tracer.start_as_current_span("vectorize_query") as vector_span:
+            query_vector = tfidf_vectorizer.transform([processed_query])
+            vector_span.set_attribute("vector.shape", str(query_vector.shape))
+        
+        # コサイン類似度計算
+        with tracer.start_as_current_span("compute_similarity") as similarity_span:
+            similarities = cosine_similarity(query_vector, tfidf_matrix).flatten()
+            similarity_span.set_attribute("similarity.matrix_size", len(similarities))
+        
+        # 結果の整理
+        with tracer.start_as_current_span("process_results") as results_span:
+            results = []
+            book_ids = list(books_data.keys())
+            
+            for i, similarity in enumerate(similarities):
+                if similarity > similarity_threshold:
+                    book_id = book_ids[i]
+                    book_info = books_data[book_id]
+                    
+                    # スニペット生成もトレース
+                    with tracer.start_as_current_span("generate_snippet", attributes={"book.id": book_id}):
+                        snippet = get_snippet(book_info['raw_text'], query)
+                    
+                    results.append({
+                        'id': book_id,
+                        'title': book_info['title'],
+                        'author': book_info['author'],
+                        'score': float(similarity),
+                        'snippet': snippet
+                    })
+            
+            # スコア順にソートして上位結果を返す
+            results.sort(key=lambda x: x['score'], reverse=True)
+            final_results = results[:max_results]
+            
+            results_span.set_attribute("results.total_matches", len(results))
+            results_span.set_attribute("results.returned", len(final_results))
+            span.set_attribute("search.results_count", len(final_results))
+            
+            if final_results:
+                span.set_attribute("search.top_score", final_results[0]['score'])
+                span.set_attribute("search.lowest_score", final_results[-1]['score'])
+            
+            return final_results
 
 def perform_search(query: str, search_method: str = "tfidf", **kwargs) -> List[Dict[str, Any]]:
     """検索を実行する統合インターフェース
@@ -230,28 +382,51 @@ def perform_search(query: str, search_method: str = "tfidf", **kwargs) -> List[D
 @app.get("/search")
 async def search_books(q: str):
     """検索クエリに基づいて書籍を検索"""
-    start_time = time.time()
-    
-    if not q or not q.strip():
-        logger.warning("空の検索クエリ", extra={"event_type": "search_validation_error", "query": q})
-        raise HTTPException(status_code=400, detail="検索クエリが空です")
-    
-    try:
-        # 検索実行
-        results = perform_search(q, search_method="tfidf")
+    with tracer.start_as_current_span("search_api") as span:
+        span.set_attribute("http.route", "/search")
+        span.set_attribute("search.query", q)
         
-        response_time = time.time() - start_time
-        logger.info("検索API", extra={"event_type": "search_complete", "query": q, "results_count": len(results), "duration_ms": round(response_time * 1000, 3)})
+        start_time = time.time()
         
-        return {
-            'query': q,
-            'total_results': len(results),
-            'results': results
-        }
-    except Exception as e:
-        error_time = time.time() - start_time
-        logger.error("検索エラー", extra={"event_type": "search_error", "query": q, "error": str(e), "duration_ms": round(error_time * 1000, 3)})
-        raise HTTPException(status_code=500, detail=f"検索エラー: {str(e)}")
+        if not q or not q.strip():
+            span.set_attribute("error.type", "validation_error")
+            span.set_attribute("error.message", "空の検索クエリ")
+            logger.warning("空の検索クエリ", extra={"event_type": "search_validation_error", "query": q})
+            raise HTTPException(status_code=400, detail="検索クエリが空です")
+        
+        try:
+            # 検索実行
+            with tracer.start_as_current_span("perform_search") as search_span:
+                search_span.set_attribute("search.method", "tfidf")
+                results = perform_search(q, search_method="tfidf")
+            
+            response_time = time.time() - start_time
+            
+            # スパンに属性を追加
+            span.set_attribute("search.results_count", len(results))
+            span.set_attribute("search.response_time_ms", round(response_time * 1000, 3))
+            span.set_attribute("http.status_code", 200)
+            
+            logger.info("検索API", extra={"event_type": "search_complete", "query": q, "results_count": len(results), "duration_ms": round(response_time * 1000, 3)})
+            
+            return {
+                'query': q,
+                'total_results': len(results),
+                'results': results
+            }
+        except Exception as e:
+            error_time = time.time() - start_time
+            
+            # エラー情報をスパンに記録
+            span.record_exception(e)
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            span.set_attribute("error.type", type(e).__name__)
+            span.set_attribute("error.message", str(e))
+            span.set_attribute("search.error_time_ms", round(error_time * 1000, 3))
+            span.set_attribute("http.status_code", 500)
+            
+            logger.error("検索エラー", extra={"event_type": "search_error", "query": q, "error": str(e), "duration_ms": round(error_time * 1000, 3)})
+            raise HTTPException(status_code=500, detail=f"検索エラー: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 

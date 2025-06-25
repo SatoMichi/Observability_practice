@@ -38,6 +38,11 @@ spec:
           value: "production"
         - name: DD_VERSION
           value: "1.0.0"
+        # OpenTelemetry設定
+        - name: OTEL_SERVICE_NAME
+          value: "search-frontend"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.name=search-frontend,service.version=1.0.0,deployment.environment=production"
         readinessProbe:
           httpGet:
             path: /health

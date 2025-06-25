@@ -5,6 +5,12 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      # OpenTelemetry設定
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=book-search-backend
+      - OTEL_RESOURCE_ATTRIBUTES=service.version=1.0.0,deployment.environment=development
+    depends_on:
+      - otel-collector
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/books"]
       interval: 30s
@@ -16,10 +22,36 @@ services:
     build: ./frontend
     ports:
       - "3000:80"
+    environment:
+      # OpenTelemetry設定
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=book-search-frontend
     depends_on:
       - backend
+      - otel-collector
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
       timeout: 5s
-      retries: 3 
+      retries: 3
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "13133:13133" # health check
+      - "14250:14250" # Jaeger gRPC receiver
+      - "14268:14268" # Jaeger HTTP receiver
+    environment:
+      - DD_API_KEY=${DD_API_KEY:-your_datadog_api_key_here}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s 

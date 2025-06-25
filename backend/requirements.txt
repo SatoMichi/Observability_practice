@@ -11,4 +11,14 @@ nltk==3.8.1
 scikit-learn==1.3.1
 
 # Numerical computing (軽量版)
-numpy==1.26.2 
+numpy==1.26.2
+
+# OpenTelemetry - 可観測性とトレース
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation==0.42b0
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-requests==0.42b0
+opentelemetry-exporter-otlp==1.21.0
+opentelemetry-exporter-otlp-proto-http==1.21.0
+opentelemetry-exporter-jaeger==1.21.0 
