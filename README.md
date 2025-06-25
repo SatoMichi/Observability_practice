@@ -235,20 +235,68 @@ open http://localhost:3000
 
 このプロジェクトは学習目的で作成されており、以下の要素を含んでいます：
 
+### 📊 **分散トレーシングシステム（実装完了）** ✅
+
+#### **OpenTelemetry完全実装**
+```yaml
+実装状況:
+  フロントエンド: React カスタムトレーサー実装
+  バックエンド: FastAPI OpenTelemetry SDK自動計装  
+  分散トレース: W3C Trace Context標準準拠
+  可視化: Datadog APM連携完了
+  
+技術仕様:
+  - 統一Trace ID: フロントエンド→バックエンド完全伝播
+  - 5階層親子関係: search_api → tfidf_search → 詳細処理
+  - W3C標準: traceparent/tracestate ヘッダー実装
+  - リアルタイム: ミリ秒単位のパフォーマンス計測
+```
+
+#### **実際のトレース例（本番環境）**
+```
+🌊 統一分散トレース (Trace ID: 0000000000000000000d062aa833921d)
+├── 🌐 frontend_search (152ms)
+│   ├── update_ui_loading (0ms)
+│   ├── prepare_api_request (0ms)
+│   ├── api_request_execute (148ms)
+│   │   ├── 🔗 http_request (147ms) ───┐
+│   │   └── parse_response (1ms)       │
+│   ├── process_search_results (1ms)    │
+│   └── update_ui_final (0ms)          │
+│                                      │
+└── 🔍 search_api (バックエンド) ←──────┘ [同一Trace ID]
+    ├── perform_search (3.98ms)
+    ├── tfidf_search (3.91ms)
+    │   ├── preprocess_query
+    │   ├── vectorize_query
+    │   ├── compute_similarity
+    │   └── process_results
+    │       └── generate_snippet
+```
+
+#### **Datadog APM可視化**
+- **Service Map**: フロントエンド→バックエンドの依存関係
+- **Trace Detail**: エンドツーエンドの処理時間分析
+- **Performance**: レスポンス時間（平均4-5ms）
+- **Error Tracking**: 実時間エラー監視
+
 ### ログ管理
 - フロントエンド: ブラウザコンソールログ
 - バックエンド: 構造化ログ出力
 - 検索クエリ: パフォーマンス計測
+- **分散ログ**: Trace ID連携による横断検索
 
 ### メトリクス
 - レスポンス時間計測
 - 検索結果件数追跡
 - エラー率監視
+- **トレースメトリクス**: スループット・レイテンシー分析
 
 ### 可観測性
 - Kubernetes ポッド状態監視
 - コンテナリソース使用量
 - アプリケーションヘルスチェック
+- **APM監視**: リアルタイムアプリケーション性能監視
 
 ## 🤝 コントリビューション
 
