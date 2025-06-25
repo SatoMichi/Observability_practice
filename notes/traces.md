@@ -195,6 +195,144 @@ Datadog Platform
 
 ---
 
+## 🔗 親子関係トレースと分散トレースの実装状況 (2025-01-26 検証完了)
+
+### ✅ 3.3. 親子関係を持つトレース - **実装済み**
+
+現在のシステムでは、HTTPリクエスト処理において複数レベルの親子関係を持つトレースが実装されています。
+
+#### 実装例: 検索API処理の階層構造
+```python
+# main.py での階層的Span実装
+@app.get("/search")
+async def search_books(q: str):
+    with tracer.start_as_current_span("search_api") as span:  # 親スパン
+        with tracer.start_as_current_span("perform_search") as search_span:  # 子スパン
+            results = perform_search(q, search_method="tfidf")
+
+def tfidf_search(query: str, max_results: int = 20, similarity_threshold: float = 0.01):
+    with tracer.start_as_current_span("tfidf_search") as span:  # 孫スパン
+        # 前処理の曾孫スパン
+        with tracer.start_as_current_span("preprocess_query") as preprocess_span:
+            processed_query = preprocess_text(query)
+        
+        # ベクトル化の曾孫スパン  
+        with tracer.start_as_current_span("vectorize_query") as vector_span:
+            query_vector = tfidf_vectorizer.transform([processed_query])
+        
+        # 類似度計算の曾孫スパン
+        with tracer.start_as_current_span("compute_similarity") as similarity_span:
+            similarities = cosine_similarity(query_vector, tfidf_matrix).flatten()
+        
+        # 結果処理の曾孫スパン
+        with tracer.start_as_current_span("process_results") as results_span:
+            # スニペット生成の玄孫スパン
+            with tracer.start_as_current_span("generate_snippet", attributes={"book.id": book_id}):
+                snippet = get_snippet(book_info['raw_text'], query)
+```
+
+#### 実際の階層構造の例
+```
+search_api (親 - 全体 4.24ms)
+├── perform_search (子 - 3.98ms)
+    └── tfidf_search (孫 - 3.91ms)
+        ├── preprocess_query (曾孫 - クエリ前処理)
+        ├── vectorize_query (曾孫 - TF-IDFベクトル化)
+        ├── compute_similarity (曾孫 - コサイン類似度計算)
+        └── process_results (曾孫 - 結果処理)
+            └── generate_snippet (玄孫 - 各書籍のスニペット生成)
+```
+
+### 🟡 3.4. 分散トレース - **部分的実装済み**
+
+#### 現在の実装状況
+1. **フロントエンド側**: 独立したトレース実装 ✅
+   ```javascript
+   // frontend/src/pages/Search/index.jsx
+   const span = tracer.startSpan('frontend_search', {
+     attributes: {
+       'search.query': searchQuery,
+       'search.page': 'search', 
+       'user.action': 'search_submit'
+     }
+   })
+   ```
+
+2. **HTTP自動計装**: Fetch APIの自動トレース ✅
+   ```javascript
+   // frontend/src/tracing.js  
+   window.fetch = async function(url, options = {}) {
+     const span = globalTracer.startSpan('http_request', {
+       attributes: {
+         'http.method': options.method || 'GET',
+         'http.url': url.toString(),
+         'component': 'fetch'
+       }
+     });
+   ```
+
+3. **バックエンド側**: FastAPI自動計装 + カスタムスパン ✅
+   ```python
+   # FastAPIInstrumentor による自動計装
+   FastAPIInstrumentor.instrument_app(app)
+   
+   # カスタムスパン実装
+   with tracer.start_as_current_span("search_api") as span:
+       span.set_attribute("search.query", q)
+   ```
+
+#### 制限事項と改善点
+- **独立したTrace ID**: フロントエンドとバックエンドで異なるTrace IDが生成される
+- **トレースコンテキスト伝播なし**: HTTPヘッダー経由でのSpan IDとTrace IDの伝播が未実装
+
+#### 完全な分散トレースに向けた改善案
+```javascript
+// 将来の実装案: Trace Contextの伝播
+const traceHeaders = {
+  'traceparent': `00-${traceId}-${spanId}-01`,
+  'tracestate': `service=frontend`
+}
+
+const response = await fetch(url, {
+  headers: {
+    ...headers,
+    ...traceHeaders
+  }
+})
+```
+
+#### 実際のトレース出力例 (2025-01-26)
+```
+# フロントエンド側
+🌐 Frontend Span Started: frontend_search
+   Service: gutenberg-search-frontend
+   Trace ID: a8c9d2e3f4b5a617
+   Span ID: 9b8c7d6e5f4a3b2c
+
+# バックエンド側
+🔍 Backend Span: search_api
+   Service: search-backend  
+   Trace ID: ddadfde1b9bdd31f  # ←異なるTrace ID
+   Span ID: c353187d4fa5a7bd
+   Attributes: {
+     'http.route': '/search',
+     'search.query': 'love',
+     'search.results_count': 10
+   }
+```
+
+### 📈 実装状況まとめ
+- **親子関係トレース**: ✅ **完全実装済み** - 5レベルの階層構造で詳細なトレース取得
+- **分散トレース**: 🟡 **基本実装済み** - 各サービスでトレース収集、サービス間の完全な関連付けは今後の課題
+- **観測可能性**: ✅ **十分実現** - HTTPリクエスト処理の詳細な可視化と性能測定
+
+### 🎯 次期改善計画
+1. **HTTPヘッダーでのトレースコンテキスト伝播**: `traceparent`ヘッダーの実装
+2. **統一されたTrace ID**: フロントエンド→バックエンドの一連の処理を単一トレースで追跡
+3. **OTLPエクスポーターの統一**: 現在のコンソール出力から本格的なCollector連携へ
+
+---
+
 ## ✅ 解決済み問題
 
 ### 1. GitHub Actions ビルド問題 - **解決済み**
