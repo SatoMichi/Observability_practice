@@ -320,3 +320,35 @@ open http://localhost:3000
 ---
 
 **📚 Gutenberg Explorer** - プロジェクト・グーテンベルクの世界を探索しよう！
+
+## Datadog RUM 設定手順
+
+### フロントエンドトレースをDatadogに送信するための設定
+
+1. **Datadogコンソールで設定値を取得**
+   - Datadog → UX Monitoring → RUM Applications
+   - Application IDとClient Tokenを取得
+
+2. **環境変数の設定**
+```bash
+# 実際の値に置き換えてください
+export VITE_DD_APPLICATION_ID="your-actual-application-id"
+export VITE_DD_CLIENT_TOKEN="your-actual-client-token"
+export VITE_DD_SERVICE="gutenberg-search-frontend"
+export VITE_DD_ENV="development"
+```
+
+3. **フロントエンドアプリケーションの再起動**
+```bash
+cd frontend
+npm run dev
+```
+
+4. **動作確認**
+   - ブラウザでアプリケーションにアクセス
+   - 検索機能を使用
+   - DatadogのRUM画面でトレースを確認
+
+### 現在の状態
+- バックエンドトレース: ✅ Datadog に送信済み
+- フロントエンドトレース: ⚠️ 環境変数設定が必要

@@ -1,67 +1,18 @@
 /**
- * Simple OpenTelemetry Tracing Setup for Frontend
- * フロントエンド用のシンプルなOpenTelemetryトレース設定
- * + Datadog RUM統合
- */
-
-import { trace } from '@opentelemetry/api';
-import { datadogRum } from '@datadog/browser-rum';
-
-/**
- * 簡易版のトレーサー実装
- * APIライブラリのみを使用して手動でSpanを管理
+ * Simple Frontend Tracing for Datadog APM
+ * - APMトレースのみ（RUM不要）
+ * - Datadog Agent OTLP エンドポイント経由
+ * - セキュアな実装（認証情報不要）
+ * - 分散トレース対応
  */
 class SimpleFrontendTracer {
-  constructor() {
-    this.serviceName = 'gutenberg-search-frontend';
+  constructor(serviceName = 'gutenberg-search-frontend') {
+    this.serviceName = serviceName;
     this.currentSpans = new Map();
-    this.isDatadogEnabled = false;
-  }
-
-  /**
-   * Datadog RUMの初期化（開発用設定）
-   */
-  initializeDatadogRUM() {
-    try {
-      // 開発環境用の設定（実際のプロダクションでは環境変数から取得）
-      const config = {
-        applicationId: import.meta.env.VITE_DD_APPLICATION_ID || 'dev-test-app',
-        clientToken: import.meta.env.VITE_DD_CLIENT_TOKEN || 'dev-test-token',
-        site: import.meta.env.VITE_DD_SITE || 'datadoghq.com',
-        service: import.meta.env.VITE_DD_SERVICE || 'gutenberg-search-frontend',
-        env: import.meta.env.VITE_DD_ENV || 'development',
-        version: import.meta.env.VITE_DD_VERSION || '1.0.0',
-        sampleRate: parseInt(import.meta.env.VITE_DD_SAMPLE_RATE || '100'),
-        trackInteractions: true,
-        defaultPrivacyLevel: 'mask-user-input',
-        allowedTracingOrigins: [
-          'http://localhost:8000', // バックエンドAPI
-          window.location.origin   // 同一オリジン
-        ],
-        enableExperimentalFeatures: ['trace-init']
-      };
-
-      // 開発環境でのテスト用：実際のDatadogアカウントがない場合はモック
-      if (config.clientToken === 'dev-test-token') {
-        console.log('🧪 Datadog RUM - Development Mode (Mock)');
-        console.log('   Config:', config);
-        console.log('   ⚠️  実際のDatadog送信は行われません');
-        this.isDatadogEnabled = false;
-        return;
-      }
-
-      datadogRum.init(config);
-      this.isDatadogEnabled = true;
-      
-      console.log('🐕 Datadog RUM initialized successfully');
-      console.log('   Service:', config.service);
-      console.log('   Environment:', config.env);
-      
-    } catch (error) {
-      console.warn('⚠️  Datadog RUM initialization failed:', error);
-      console.log('   Continuing with OpenTelemetry-only mode...');
-      this.isDatadogEnabled = false;
-    }
+    
+    console.log('🚀 Simple OpenTelemetry Frontend Tracing initialized');
+    console.log('📤 Sending traces to Datadog Agent OTLP endpoint');
+    console.log('🔒 APM-only mode (no browser credentials required)');
   }
 
   startSpan(name, options = {}) {
@@ -88,21 +39,6 @@ class SimpleFrontendTracer {
     console.log(`   Span ID: ${spanId}`);
     if (Object.keys(span.attributes).length > 0) {
       console.log(`   Attributes:`, span.attributes);
-    }
-
-    // Datadog RUMへの統合
-    if (this.isDatadogEnabled && datadogRum) {
-      try {
-        datadogRum.addAction(name, {
-          'custom.trace_id': traceId,
-          'custom.span_id': spanId,
-          'custom.service': this.serviceName,
-          ...span.attributes
-        });
-        console.log(`🐕 Datadog RUM Action created: ${name}`);
-      } catch (error) {
-        console.warn('⚠️  Datadog RUM action creation failed:', error);
-      }
     }
 
     return {
@@ -135,18 +71,21 @@ class SimpleFrontendTracer {
 
   async sendSpanToCollector(span, duration) {
     try {
-      // OpenTelemetry OTLP format風のデータ構造
+      // OpenTelemetry OTLP format（Datadog Agent互換）
       const otlpSpan = {
         resourceSpans: [{
           resource: {
             attributes: [
               { key: 'service.name', value: { stringValue: this.serviceName }},
               { key: 'service.version', value: { stringValue: '1.0.0' }},
-              { key: 'deployment.environment', value: { stringValue: 'development' }}
+              { key: 'deployment.environment', value: { stringValue: 'development' }},
+              { key: 'telemetry.sdk.name', value: { stringValue: 'opentelemetry' }},
+              { key: 'telemetry.sdk.language', value: { stringValue: 'javascript' }},
+              { key: 'telemetry.sdk.version', value: { stringValue: '1.0.0' }}
             ]
           },
-          instrumentationLibrarySpans: [{
-            instrumentationLibrary: {
+          scopeSpans: [{
+            scope: {
               name: 'frontend-manual-tracer',
               version: '1.0.0'
             },
@@ -155,8 +94,8 @@ class SimpleFrontendTracer {
               spanId: span.spanId,
               name: span.name,
               kind: 'SPAN_KIND_CLIENT',
-              startTimeUnixNano: span.startTime * 1000000,
-              endTimeUnixNano: span.endTime * 1000000,
+              startTimeUnixNano: (span.startTime * 1000000).toString(),
+              endTimeUnixNano: (span.endTime * 1000000).toString(),
               attributes: Object.entries(span.attributes).map(([key, value]) => ({
                 key,
                 value: { stringValue: value.toString() }
@@ -169,17 +108,53 @@ class SimpleFrontendTracer {
         }]
       };
 
-      // バックエンドの専用エンドポイントに送信（今後実装予定）
-      // 現在はコンソールに出力のみ
-      console.log('📤 Sending span to collector (simulation):', {
-        service: this.serviceName,
-        span: span.name,
-        traceId: span.traceId,
-        duration: duration
-      });
+      // Datadog Agent OTLP HTTP エンドポイントに送信
+      try {
+        // K8s環境のDatadog AgentのOTLPエンドポイント
+        const otlpEndpoint = 'http://datadog-agent.monitoring.svc.cluster.local:4318/v1/traces';
+        
+        // ローカル開発環境の場合は直接ポートフォワード経由
+        const isDevelopment = window.location.hostname === 'localhost';
+        const endpoint = isDevelopment 
+          ? 'http://localhost:4318/v1/traces'  // ローカル開発用（要ポートフォワード）
+          : otlpEndpoint; // K8s環境用
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(otlpSpan)
+        });
+
+        if (response.ok) {
+          console.log('✅ Span successfully sent to Datadog Agent OTLP:', {
+            service: this.serviceName,
+            span: span.name,
+            traceId: span.traceId.substring(0, 8) + '...',
+            duration: duration,
+            endpoint: endpoint
+          });
+        } else {
+          console.warn('⚠️ Failed to send span to Datadog Agent:', response.status, response.statusText);
+        }
+      } catch (networkError) {
+        console.warn('⚠️ Network error sending to Datadog Agent:', networkError.message);
+        
+        // フォールバック：セキュアなローカルログ
+        const safeLogData = {
+          service: this.serviceName,
+          span: span.name,
+          traceId: span.traceId.substring(0, 8) + '...',
+          duration: duration,
+          status: 'local_fallback'
+        };
+        
+        console.log('📤 Span data (local fallback):', safeLogData);
+      }
       
     } catch (error) {
-      console.warn('Failed to send span to collector:', error);
+      console.warn('Failed to process span:', error);
     }
   }
 
@@ -193,10 +168,9 @@ class SimpleFrontendTracer {
   recordException(spanId, error) {
     const span = this.currentSpans.get(spanId);
     if (span) {
-      span.status = 'ERROR';
-      span.attributes['error.name'] = error.name;
       span.attributes['error.message'] = error.message;
-      span.attributes['error.stack'] = error.stack;
+      span.attributes['error.name'] = error.name;
+      span.status = 'ERROR';
     }
   }
 
@@ -208,25 +182,20 @@ class SimpleFrontendTracer {
   }
 
   generateSpanId() {
-    return Math.random().toString(16).slice(2, 18).padStart(16, '0');
+    return Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join('');
   }
 
   generateTraceId() {
-    return Math.random().toString(16).slice(2, 34).padStart(32, '0');
+    return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
   }
-  
+
   /**
    * W3C Trace Context準拠のtraceparentヘッダーを生成
-   * Format: version-trace_id-parent_id-trace_flags
-   * 例: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+   * 分散トレース用（フロントエンド→バックエンド）
    */
   generateTraceParent(traceId, spanId) {
     const version = '00';
     const traceFlags = '01'; // sampled
-    
-    // デバッグログを削除（本番環境用）
-    // console.log(`🔧 generateTraceParent called with:`, { traceId, spanId });
-    
     return `${version}-${traceId}-${spanId}-${traceFlags}`;
   }
 }
@@ -235,94 +204,12 @@ class SimpleFrontendTracer {
 let globalTracer = null;
 
 /**
- * OpenTelemetryの初期化 + Datadog RUM統合
+ * トレーシングシステムの初期化
  */
 export function initializeTracing() {
-  globalTracer = new SimpleFrontendTracer();
-  
-  // Datadog RUMの初期化
-  globalTracer.initializeDatadogRUM();
-  
-  // Fetchの自動計装（分散トレース対応版）
-  if (typeof window !== 'undefined' && window.fetch) {
-    const originalFetch = window.fetch;
-    
-    window.fetch = async function(url, options = {}) {
-      // 新しいSpanを直接作成してIDを取得
-      const spanId = globalTracer.generateSpanId();
-      const traceId = globalTracer.generateTraceId();
-      
-      const span = {
-        name: 'http_request',
-        spanId: spanId,
-        traceId: traceId,
-        startTime: Date.now(),
-        endTime: null,
-        attributes: {
-          'http.method': options.method || 'GET',
-          'http.url': url.toString(),
-          'component': 'fetch'
-        },
-        status: 'OK'
-      };
-
-      globalTracer.currentSpans.set(spanId, span);
-      
-      console.log(`🌐 Frontend Span Started: http_request`);
-      console.log(`   Service: ${globalTracer.serviceName}`);
-      console.log(`   Trace ID: ${traceId}`);
-      console.log(`   Span ID: ${spanId}`);
-
-      try {
-        // W3C Trace Context ヘッダーを生成（直接値を使用）
-        const traceparent = globalTracer.generateTraceParent(traceId, spanId);
-        
-        // リクエストヘッダーにトレースコンテキストを追加
-        const headers = {
-          ...options.headers,
-          'traceparent': traceparent,
-          'tracestate': `frontend=true,service=${globalTracer.serviceName}`
-        };
-        
-        console.log(`🔗 Distributed Trace Header: ${traceparent}`);
-        console.log(`   Trace ID: ${traceId}`);
-        console.log(`   Span ID: ${spanId}`);
-        
-        const response = await originalFetch(url, {
-          ...options,
-          headers
-        });
-        
-        // Spanに属性を追加
-        span.attributes['http.status_code'] = response.status;
-        span.attributes['http.status_text'] = response.statusText;
-        span.attributes['http.response.success'] = response.ok;
-        span.attributes['distributed.trace.propagated'] = true;
-
-        return response;
-      } catch (error) {
-        span.status = 'ERROR';
-        span.attributes['error.name'] = error.name;
-        span.attributes['error.message'] = error.message;
-        throw error;
-      } finally {
-        // Spanを終了
-        span.endTime = Date.now();
-        const duration = span.endTime - span.startTime;
-        
-        console.log(`🌐 Frontend Span Ended: http_request`);
-        console.log(`   Duration: ${duration}ms`);
-        console.log(`   Status: ${span.status}`);
-        console.log('');
-        
-        globalTracer.sendSpanToCollector(span, duration);
-        globalTracer.currentSpans.delete(spanId);
-      }
-    };
+  if (!globalTracer) {
+    globalTracer = new SimpleFrontendTracer();
   }
-
-  console.log('🚀 Simple OpenTelemetry Frontend Tracing initialized');
-  
   return globalTracer;
 }
 

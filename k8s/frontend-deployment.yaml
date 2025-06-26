@@ -43,6 +43,21 @@ spec:
           value: "search-frontend"
         - name: OTEL_RESOURCE_ATTRIBUTES
           value: "service.name=search-frontend,service.version=1.0.0,deployment.environment=production"
+        # Datadog RUM設定 (実際の値に置き換える必要があります)
+        - name: VITE_DD_APPLICATION_ID
+          value: "test-app-id-k8s"  # テスト用：実際のDatadog Application IDに置き換えてください
+        - name: VITE_DD_CLIENT_TOKEN
+          value: "test-client-token-k8s"   # テスト用：実際のDatadog Client Tokenに置き換えてください
+        - name: VITE_DD_SITE
+          value: "datadoghq.com"
+        - name: VITE_DD_SERVICE
+          value: "search-frontend"
+        - name: VITE_DD_ENV
+          value: "production"
+        - name: VITE_DD_VERSION
+          value: "1.0.0"
+        - name: VITE_DD_SAMPLE_RATE
+          value: "100"
         readinessProbe:
           httpGet:
             path: /health
