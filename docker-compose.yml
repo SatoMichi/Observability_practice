@@ -9,8 +9,12 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=book-search-backend
       - OTEL_RESOURCE_ATTRIBUTES=service.version=1.0.0,deployment.environment=development
+      # Unleash設定
+      - UNLEASH_URL=http://unleash:4242/api
+      - UNLEASH_API_TOKEN=default:development.unleash-insecure-client-api-token
     depends_on:
       - otel-collector
+      - unleash
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/books"]
       interval: 30s
@@ -35,6 +39,52 @@ services:
       timeout: 5s
       retries: 3
 
+  # Unleash Feature Flag Service
+  unleash:
+    image: unleashorg/unleash-server:latest
+    ports:
+      - "4242:4242"
+    environment:
+      - DATABASE_HOST=postgres
+      - DATABASE_NAME=unleash
+      - DATABASE_USERNAME=unleash_user
+      - DATABASE_PASSWORD=unleash_password
+      - DATABASE_SSL=false
+      - LOG_LEVEL=info
+      # 適切なAPIトークン設定
+      - INIT_FRONTEND_API_TOKENS=default:development.unleash-insecure-frontend-api-token
+      - INIT_CLIENT_API_TOKENS=default:development.unleash-insecure-client-api-token
+      # 認証を無効にして基本的な接続性をテスト
+      - UNLEASH_EXPERIMENTAL_FEATURES_DISABLED=false
+      - AUTH_TYPE=none
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4242/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # PostgreSQL Database for Unleash
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=unleash
+      - POSTGRES_USER=unleash_user
+      - POSTGRES_PASSWORD=unleash_password
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - unleash_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unleash_user -d unleash"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # OpenTelemetry Collector
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
@@ -54,4 +104,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s 
+      start_period: 30s
+
+volumes:
+  unleash_postgres_data: 

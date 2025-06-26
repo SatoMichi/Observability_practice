@@ -2,6 +2,8 @@ import json
 import string
 import time
 from typing import List, Dict, Any
+import os
+import requests
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -18,6 +20,12 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry import propagate
 import logging
+
+# Feature Flags - Unleash
+from UnleashClient import UnleashClient
+
+# BM25 Search Algorithm
+from rank_bm25 import BM25Okapi
 
 # NLTKの初期設定
 import nltk
@@ -43,116 +51,91 @@ from nltk.tokenize import word_tokenize, sent_tokenize
 from log_system import setup_logger
 
 # OpenTelemetryの初期化
-class SimpleConsoleSpanExporter:
-    """簡易的なコンソール出力エクスポーター"""
-    def export(self, spans):
-        for span in spans:
-            print(f"🔍 Span: {span.name}")
-            print(f"   Service: {span.resource.attributes.get('service.name', 'unknown')}")
-            print(f"   Trace ID: {format(span.context.trace_id, '032x')}")
-            print(f"   Span ID: {format(span.context.span_id, '016x')}")
-            print(f"   Duration: {(span.end_time - span.start_time) / 1_000_000:.2f} ms")
-            
-            # 分散トレース情報の表示
-            distributed_received = span.attributes.get('distributed.trace.received', False)
-            if distributed_received:
-                traceparent = span.attributes.get('distributed.trace.traceparent', '')
-                print(f"   🔗 Distributed Trace: Connected from Frontend")
-                print(f"   📡 Traceparent: {traceparent}")
-            
-            if span.attributes:
-                print(f"   Attributes: {dict(span.attributes)}")
-            print()
-        return 0
-    
-    def shutdown(self):
-        """エクスポーターのシャットダウン"""
-        print("🔍 Console Span Exporter shutdown")
-        return True
-
 def setup_tracing():
-    """OpenTelemetryトレースの初期化"""
-    import os
+    """OpenTelemetryトレーシングの設定"""
     
-    # 環境に応じたサービス名とリソース設定
-    service_name = os.getenv("OTEL_SERVICE_NAME", "gutenberg-search-api")
-    service_version = os.getenv("DD_VERSION", "1.0.0")
-    environment = os.getenv("DD_ENV", "development")
-    
-    # リソースの設定
-    resource = Resource.create({
-        "service.name": service_name,
-        "service.version": service_version,
-        "deployment.environment": environment
+    # リソース情報を設定
+    resource = Resource(attributes={
+        "service.name": "gutenberg-search-api",
+        "service.version": "1.0.0",
+        "deployment.environment": os.getenv("ENVIRONMENT", "development"),
     })
     
-    # TracerProviderの設定
-    tracer_provider = TracerProvider(resource=resource)
-    trace.set_tracer_provider(tracer_provider)
+    # トレーサープロバイダーを設定
+    provider = TracerProvider(resource=resource)
+    trace.set_tracer_provider(provider)
     
-    # エクスポーターの設定
-    # 簡易コンソール出力（開発・デバッグ用）
-    console_exporter = SimpleConsoleSpanExporter()
-    tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+    # コンソールエクスポーター（デバッグ用）
+    from opentelemetry.sdk.trace.export import ConsoleSpanExporter
+    console_exporter = ConsoleSpanExporter()
+    console_processor = BatchSpanProcessor(console_exporter)
+    provider.add_span_processor(console_processor)
     
-    # Kubernetes環境での分散トレース設定
-    dd_trace_agent_url = os.getenv("DD_TRACE_AGENT_URL")
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
-    
-    # Datadog環境でのOTLP設定
-    if dd_trace_agent_url:
-        try:
-            # Datadog Agent経由でのトレース送信
-            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
-            
-            # Datadog Agent OTLPエンドポイント使用
-            dd_otlp_endpoint = dd_trace_agent_url.replace(":8126", ":4318")
-            otlp_exporter = HTTPOTLPSpanExporter(
-                endpoint=f"{dd_otlp_endpoint}/v1/traces",
-                headers={}
-            )
-            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-            print(f"🐕 Datadog OTLP Exporter configured: {dd_otlp_endpoint}")
-            
-        except Exception as e:
-            print(f"⚠️  Datadog OTLP Exporter setup failed: {e}")
-            # フォールバック: 標準OTLPエンドポイント
-            try:
-                from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
-                otlp_exporter = HTTPOTLPSpanExporter(
-                    endpoint=f"{otlp_endpoint}/v1/traces",
-                    headers={}
-                )
-                tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-                print(f"🔗 Fallback OTLP Exporter configured: {otlp_endpoint}")
-            except Exception as fallback_error:
-                print(f"⚠️  Fallback OTLP Exporter setup failed: {fallback_error}")
-                print("   Continuing with console output only...")
-    else:
-        # ローカル環境用の設定
-        try:
-            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
-            otlp_exporter = HTTPOTLPSpanExporter(
-                endpoint=f"{otlp_endpoint}/v1/traces",
-                headers={}
-            )
-            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-            print(f"🔗 Local OTLP Exporter configured: {otlp_endpoint}")
-        except Exception as e:
-            print(f"⚠️  Local OTLP Exporter setup failed: {e}")
-            print("   Continuing with console output only...")
+    # OTLP Collectorが利用可能な場合のみOTLPエクスポーターを追加
+    try:
+        # OTLPエクスポーターの設定を試行
+        response = requests.get("http://localhost:4318/v1/traces", timeout=1)
+        
+        # 接続成功した場合のみOTLPエクスポーターを追加
+        otlp_exporter = OTLPSpanExporter(
+            endpoint="http://localhost:4318/v1/traces",
+            headers={}
+        )
+        otlp_processor = BatchSpanProcessor(otlp_exporter)
+        provider.add_span_processor(otlp_processor)
+        print("🔗 OTLP Exporter configured: http://localhost:4318")
+        
+    except Exception as e:
+        print(f"⚠️ OTLP Collector not available, using console output only: {e}")
+        print("🖥️ Console Exporter configured for tracing")
     
     return trace.get_tracer(__name__)
 
 # トレーサーの初期化
 tracer = setup_tracing()
 
+# Unleashクライアントの初期化
+def setup_unleash():
+    """Unleashクライアントの初期化"""
+    unleash_url = os.getenv("UNLEASH_URL", "http://localhost:4242/api")
+    unleash_token = os.getenv("UNLEASH_API_TOKEN", "default:development.unleash-insecure-client-api-token")
+    
+    try:
+        # Unleashクライアントの初期化（認証なしでテスト）
+        client = UnleashClient(
+            url=unleash_url,
+            app_name="gutenberg-search-api"
+        )
+        
+        # 5秒間、接続試行を待つ
+        print(f"📡 Unleash client connecting to: {unleash_url}")
+        client.initialize_client()
+        
+        # 接続確認のための少し待機
+        import time
+        time.sleep(2)
+        
+        print(f"🚀 Unleash client initialized successfully")
+        return client
+    except Exception as e:
+        print(f"⚠️ Unleash client initialization failed: {e}")
+        print("   Continuing without feature flags...")
+        return None
+
+# Unleashクライアントの初期化
+unleash_client = setup_unleash()
+
 # ロガーの設定
 logger = setup_logger("search_app")
 
-app = FastAPI(title="全文検索API")
+# FastAPIアプリケーションの作成
+app = FastAPI(
+    title="Gutenberg Explorer API",
+    description="古典文学検索のためのTF-IDF検索API",
+    version="1.0.0"
+)
 
-# FastAPIの自動計装を有効化
+# FastAPIのインストルメンテーション
 FastAPIInstrumentor.instrument_app(app)
 
 # CORS設定
@@ -169,6 +152,8 @@ books_data = {}
 tfidf_vectorizer = None
 tfidf_matrix = None
 processed_texts = {}
+bm25_model = None
+tokenized_corpus = []
 
 def preprocess_text(text: str) -> str:
     """テキストの前処理"""
@@ -213,7 +198,7 @@ def get_snippet(text: str, query: str, context_length: int = 25) -> str:
 @app.on_event("startup")
 async def startup_event():
     """アプリ起動時にデータの読み込みとTF-IDFベクトル化を実行"""
-    global books_data, tfidf_vectorizer, tfidf_matrix, processed_texts
+    global books_data, tfidf_vectorizer, tfidf_matrix, processed_texts, bm25_model, tokenized_corpus
     
     with tracer.start_as_current_span("app_startup") as span:
         try:
@@ -262,6 +247,14 @@ async def startup_event():
                 tfidf_span.set_attribute("tfidf.ngram_range", "1,2")
                 tfidf_span.set_attribute("tfidf.texts_count", len(texts_list))
                 tfidf_span.set_attribute("tfidf.matrix_shape", str(tfidf_matrix.shape))
+            
+            # BM25モデルの初期化
+            with tracer.start_as_current_span("bm25_initialization") as bm25_span:
+                tokenized_corpus = [text.split() for text in texts_list]
+                bm25_model = BM25Okapi(tokenized_corpus)
+                
+                bm25_span.set_attribute("bm25.corpus_size", len(tokenized_corpus))
+                bm25_span.set_attribute("bm25.avg_doc_length", sum(len(doc) for doc in tokenized_corpus) / len(tokenized_corpus))
             
             total_time = time.time() - start_time
             span.set_attribute("startup.duration_seconds", round(total_time, 2))
@@ -351,7 +344,81 @@ def tfidf_search(query: str, max_results: int = 20, similarity_threshold: float 
                         'title': book_info['title'],
                         'author': book_info['author'],
                         'score': float(similarity),
-                        'snippet': snippet
+                        'snippet': snippet,
+                        'search_method': 'tfidf'
+                    })
+            
+            # スコア順にソートして上位結果を返す
+            results.sort(key=lambda x: x['score'], reverse=True)
+            final_results = results[:max_results]
+            
+            results_span.set_attribute("results.total_matches", len(results))
+            results_span.set_attribute("results.returned", len(final_results))
+            span.set_attribute("search.results_count", len(final_results))
+            
+            if final_results:
+                span.set_attribute("search.top_score", final_results[0]['score'])
+                span.set_attribute("search.lowest_score", final_results[-1]['score'])
+            
+            return final_results
+
+def bm25_search(query: str, max_results: int = 20, score_threshold: float = 0.5) -> List[Dict[str, Any]]:
+    """BM25ベースの検索を実行
+    
+    Args:
+        query: 検索クエリ
+        max_results: 最大結果件数
+        score_threshold: BM25スコアの閾値
+        
+    Returns:
+        検索結果のリスト
+    """
+    with tracer.start_as_current_span("bm25_search") as span:
+        span.set_attribute("search.query", query)
+        span.set_attribute("search.max_results", max_results)
+        span.set_attribute("search.score_threshold", score_threshold)
+        span.set_attribute("search.algorithm", "bm25")
+        
+        # クエリの前処理
+        with tracer.start_as_current_span("preprocess_query") as preprocess_span:
+            processed_query = preprocess_text(query)
+            query_tokens = processed_query.split()
+            preprocess_span.set_attribute("query.original", query)
+            preprocess_span.set_attribute("query.processed", processed_query)
+            preprocess_span.set_attribute("query.tokens_count", len(query_tokens))
+            
+            if not query_tokens:
+                span.set_attribute("search.results_count", 0)
+                return []
+        
+        # BM25スコア計算
+        with tracer.start_as_current_span("compute_bm25_scores") as bm25_span:
+            scores = bm25_model.get_scores(query_tokens)
+            bm25_span.set_attribute("bm25.scores_computed", len(scores))
+            bm25_span.set_attribute("bm25.max_score", float(max(scores)) if len(scores) > 0 else 0)
+            bm25_span.set_attribute("bm25.min_score", float(min(scores)) if len(scores) > 0 else 0)
+        
+        # 結果の整理
+        with tracer.start_as_current_span("process_results") as results_span:
+            results = []
+            book_ids = list(books_data.keys())
+            
+            for i, score in enumerate(scores):
+                if score > score_threshold:
+                    book_id = book_ids[i]
+                    book_info = books_data[book_id]
+                    
+                    # スニペット生成もトレース
+                    with tracer.start_as_current_span("generate_snippet", attributes={"book.id": book_id}):
+                        snippet = get_snippet(book_info['raw_text'], query)
+                    
+                    results.append({
+                        'id': book_id,
+                        'title': book_info['title'],
+                        'author': book_info['author'],
+                        'score': float(score),
+                        'snippet': snippet,
+                        'search_method': 'bm25'
                     })
             
             # スコア順にソートして上位結果を返す
@@ -381,8 +448,8 @@ def perform_search(query: str, search_method: str = "tfidf", **kwargs) -> List[D
     """
     if search_method == "tfidf":
         return tfidf_search(query, **kwargs)
-    # elif search_method == "bm25":
-    #     return bm25_search(query, **kwargs)
+    elif search_method == "bm25":
+        return bm25_search(query, **kwargs)
     # elif search_method == "dense":
     #     return dense_search(query, **kwargs)
     else:
@@ -423,10 +490,22 @@ async def search_books(q: str, request: Request):
             raise HTTPException(status_code=400, detail="検索クエリが空です")
         
         try:
+            # フィーチャーフラグで検索アルゴリズムを決定
+            search_method = "tfidf"  # デフォルト
+            
+            if unleash_client and unleash_client.is_enabled("bm25_search"):
+                search_method = "bm25"
+                print("🚀 Feature flag enabled: Using BM25 search algorithm")
+                logger.info("フィーチャーフラグ有効", extra={"event_type": "feature_flag", "flag": "bm25_search", "enabled": True})
+            else:
+                print("📊 Feature flag disabled: Using TF-IDF search algorithm")
+                logger.info("フィーチャーフラグ無効", extra={"event_type": "feature_flag", "flag": "bm25_search", "enabled": False})
+            
             # 検索実行
             with tracer.start_as_current_span("perform_search") as search_span:
-                search_span.set_attribute("search.method", "tfidf")
-                results = perform_search(q, search_method="tfidf")
+                search_span.set_attribute("search.method", search_method)
+                search_span.set_attribute("feature_flag.bm25_enabled", search_method == "bm25")
+                results = perform_search(q, search_method=search_method)
             
             response_time = time.time() - start_time
             
