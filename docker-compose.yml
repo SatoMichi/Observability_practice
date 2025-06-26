@@ -12,6 +12,8 @@ services:
       # Unleash設定
       - UNLEASH_URL=http://unleash:4242/api
       - UNLEASH_API_TOKEN=default:development.unleash-insecure-client-api-token
+      # テスト用BM25強制有効化（現在無効）
+      - FORCE_BM25_SEARCH=false
     depends_on:
       - otel-collector
       - unleash
@@ -54,9 +56,9 @@ services:
       # 適切なAPIトークン設定
       - INIT_FRONTEND_API_TOKENS=default:development.unleash-insecure-frontend-api-token
       - INIT_CLIENT_API_TOKENS=default:development.unleash-insecure-client-api-token
-      # 認証を無効にして基本的な接続性をテスト
-      - UNLEASH_EXPERIMENTAL_FEATURES_DISABLED=false
-      - AUTH_TYPE=none
+      # プロダクション用APIトークン認証
+      - UNLEASH_DEFAULT_ADMIN_PASSWORD=unleash4all
+      - UNLEASH_DEFAULT_ADMIN_USERNAME=admin
     depends_on:
       postgres:
         condition: service_healthy

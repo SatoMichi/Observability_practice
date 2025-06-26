@@ -101,10 +101,11 @@ def setup_unleash():
     unleash_token = os.getenv("UNLEASH_API_TOKEN", "default:development.unleash-insecure-client-api-token")
     
     try:
-        # Unleashクライアントの初期化（認証なしでテスト）
+        # Unleashクライアントの初期化（APIトークン認証を使用）
         client = UnleashClient(
             url=unleash_url,
-            app_name="gutenberg-search-api"
+            app_name="gutenberg-search-api",
+            custom_headers={'Authorization': unleash_token}
         )
         
         # 5秒間、接続試行を待つ
@@ -493,7 +494,14 @@ async def search_books(q: str, request: Request):
             # フィーチャーフラグで検索アルゴリズムを決定
             search_method = "tfidf"  # デフォルト
             
-            if unleash_client and unleash_client.is_enabled("bm25_search"):
+            # テスト用: 環境変数でBM25を強制有効化
+            force_bm25 = os.getenv("FORCE_BM25_SEARCH", "false").lower() == "true"
+            
+            if force_bm25:
+                search_method = "bm25"
+                print("🧪 Test mode: Forcing BM25 search algorithm via environment variable")
+                logger.info("テスト用フラグ有効", extra={"event_type": "test_flag", "flag": "force_bm25", "enabled": True})
+            elif unleash_client and unleash_client.is_enabled("bm25_search"):
                 search_method = "bm25"
                 print("🚀 Feature flag enabled: Using BM25 search algorithm")
                 logger.info("フィーチャーフラグ有効", extra={"event_type": "feature_flag", "flag": "bm25_search", "enabled": True})
