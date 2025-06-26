@@ -321,3 +321,270 @@ INFO: 10.0.64.135:36854 - "GET /search?q=alice HTTP/1.0" 200 OK
 6. `parse_response` (レスポンス処理)
 7. `process_search_results` (結果処理)
 8. `update_ui_final` (UI完了)
+
+---
+
+## 📅 **実装日: 2025-06-26 Phase 3更新** - APMトレース統合実装
+
+---
+
+## 🎯 **Phase 3: Datadog APM統合への方針転換**
+
+### **重要な実装変更**
+**RUM（Real User Monitoring）** → **APM（Application Performance Monitoring）**へのアプローチ変更
+
+#### **変更理由**:
+1. **研修環境セキュリティ**: RUM認証情報（Application ID/Client Token）管理回避
+2. **シンプルな統合**: Datadog Agent APM自動収集の活用
+3. **分散トレース重視**: フロント→バック TraceID連携に集中
+
+---
+
+## 🔧 **APMトレース統合実装**
+
+### **1. フロントエンド実装の完全書き換え**
+
+**ファイル**: `frontend/src/tracing.js`
+
+#### **新アプローチ**:
+- **RUM SDK削除**: 認証不要の実装へ変更
+- **OTLP HTTP直接送信**: Datadog Agent（4318ポート）へ送信
+- **OpenTelemetry準拠**: 標準フォーマットでの分散トレース
+
+#### **実装コード**:
+```javascript
+class SimpleFrontendTracer {
+  async sendSpanToCollector(span, duration) {
+    // OpenTelemetry OTLP format（Datadog Agent互換）
+    const otlpSpan = {
+      resourceSpans: [{
+        resource: {
+          attributes: [
+            { key: 'service.name', value: { stringValue: this.serviceName }},
+            { key: 'deployment.environment', value: { stringValue: 'development' }}
+          ]
+        },
+        scopeSpans: [{
+          spans: [{
+            traceId: span.traceId,
+            spanId: span.spanId,
+            name: span.name,
+            kind: 'SPAN_KIND_CLIENT',
+            startTimeUnixNano: (span.startTime * 1000000).toString(),
+            endTimeUnixNano: (span.endTime * 1000000).toString()
+          }]
+        }]
+      }]
+    };
+
+    // Datadog Agent OTLP エンドポイント
+    const endpoint = isDevelopment 
+      ? 'http://localhost:4318/v1/traces'  // ポートフォワード
+      : 'http://datadog-agent.monitoring.svc.cluster.local:4318/v1/traces';
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(otlpSpan)
+    });
+  }
+}
+```
+
+### **2. K8s環境での展開**
+
+#### **Kubernetes デプロイメント**:
+- **Namespace**: `satomichi`
+- **Frontend Service**: `frontend-service` (ポート80)
+- **Backend Service**: `backend-service` (ポート8000)
+- **イメージ**: GitHub Container Registry (ghcr.io) から最新版取得
+
+#### **ポートフォワード設定**:
+```bash
+# フロントエンド
+kubectl port-forward -n satomichi svc/frontend-service 8080:80
+
+# バックエンド  
+kubectl port-forward -n satomichi svc/backend-service 8000:8000
+
+# Datadog Agent OTLP
+kubectl port-forward -n monitoring svc/datadog-agent 4318:4318
+```
+
+---
+
+## 🔍 **Datadog APM確認結果**
+
+### **✅ バックエンドトレース成功**
+
+#### **APM画面で確認された情報**:
+- **サービス名**: `search-backend`
+- **環境**: `production`
+- **トレース表示**: 正常に動作
+
+#### **詳細なSpan階層**:
+```
+GET /search (2.89s)
+├── search_api (2.89s)
+├── perform_search (2.89s)  
+└── tfidf_search (2.89s)
+    ├── preprocess_query (395μs)
+    ├── vectorize_query (939μs)
+    ├── compute_similarity (1.20ms)
+    └── process_results (2.88s)
+        ├── generate_snippet (367ms)
+        ├── generate_snippet (118ms)
+        ├── generate_snippet (202ms)
+        └── ... (計10個のスニペット生成)
+```
+
+#### **サンプルトレース詳細**:
+- **Trace ID**: `912597e927140827...`
+- **実行時間**: 2.89秒
+- **HTTP Status**: 200 OK
+- **検索クエリ**: `q=love`
+- **結果件数**: 10件
+
+### **❌ フロントエンドSpan未表示**
+
+#### **現状の問題**:
+1. **ネットワーク接続**: K8s環境でのDatadog Agent OTLP接続失敗
+2. **CORS制限**: ブラウザからのダイレクト送信制限
+3. **実証不足**: 実際のフロントエンド操作でのテスト未実施
+
+#### **確認されたログ**:
+```console
+# バックエンドのみの表示
+🔍 Span: GET /books
+   Service: search-backend
+   Trace ID: 7ca169deaa7eddd76674789caec08208
+   Duration: 1.44 ms
+```
+
+---
+
+## 🚀 **大量トレーステスト実行結果**
+
+### **バックエンド直接負荷テスト**
+```bash
+# 15種類キーワード並列検索
+./test_search_load.sh
+```
+
+#### **テスト結果**:
+- **検索キーワード**: alice, shakespeare, hamlet, love, death, time, war, peace, king, queen, sword, magic, dream, forest, river, mountain
+- **並列実行**: 5バッチ × 5並列 = 25同時検索
+- **分散トレースヘッダー**: 全リクエストに`traceparent`ヘッダー付与
+
+#### **検索結果サンプル**:
+```
+🔍 検索: love - 10件結果
+🔍 検索: death - 9件結果  
+🔍 検索: time - 18件結果
+🔍 検索: shakespeare - 12件結果
+```
+
+### **Datadog APMでの確認**
+- ✅ **全トレース表示**: 並列検索すべて記録
+- ✅ **詳細分析**: 各検索処理のボトルネック特定
+- ✅ **パフォーマンス監視**: レスポンス時間分布確認
+
+---
+
+## 📦 **最終Git管理**
+
+### **コミット情報**
+```bash
+git add .
+git commit -m "feat: APMトレース統合実装
+
+- フロントエンドをRUMからAPM専用実装に変更
+- Datadog Agent OTLP HTTPエンドポイント直接送信
+- セキュアな実装（認証情報不要）
+- K8s環境での分散トレース対応
+- 大量負荷テスト実装と実行完了"
+
+git push origin main
+```
+
+### **自動ビルド完了**
+- ✅ **GitHub Actions**: 自動コンテナビルド
+- ✅ **GHCR Push**: 最新イメージをレジストリ登録
+- ✅ **K8s Deploy**: `./deploy-latest.sh`でデプロイ完了
+
+---
+
+## 🎯 **Phase 3成果と課題**
+
+### **✅ 達成された成果**
+
+1. **バックエンドAPM完全統合**:
+   - Datadogでの詳細トレース表示
+   - 分散トレース対応済み
+   - 高負荷テスト成功
+
+2. **セキュアな実装**:
+   - RUM認証情報不要
+   - Datadog Agent自動収集活用
+   - 研修環境に最適化
+
+3. **運用基盤**:
+   - K8s環境での安定動作
+   - CI/CD自動化完成
+   - 負荷テスト基盤構築
+
+### **🔧 残る課題**
+
+#### **フロントエンドSpan統合**:
+1. **ネットワーク設定**: K8s内でのOTLP接続確立
+2. **CORS対応**: ブラウザセキュリティ制限回避
+3. **実証テスト**: 実際のUI操作でのSpan送信確認
+
+#### **次回実装予定**:
+```javascript
+// プロキシサーバー経由での送信
+// または、バックエンド経由でのSpan中継
+const proxyEndpoint = '/api/traces/forward';
+```
+
+---
+
+## 🔮 **今後の方向性**
+
+### **短期目標（次回セッション）**:
+1. **フロントエンドSpan送信修正**
+2. **完全な分散トレース実現**
+3. **統合ダッシュボード作成**
+
+### **中期目標**:
+1. **リアルタイム監視アラート**
+2. **パフォーマンス最適化指標**
+3. **ユーザーエクスペリエンス分析**
+
+### **長期的価値**:
+- **研修カリキュラム**: 実践的なObservability学習環境
+- **運用ノウハウ**: 本格的な監視システム構築経験
+- **技術基盤**: 他プロジェクトへの応用可能な設計
+
+---
+
+## 📋 **実装メモ**
+
+### **技術的決定**:
+- **APM優先**: RUMより実装・管理が容易
+- **Agent活用**: Datadog Agent自動収集機能をフル活用
+- **段階的実装**: バックエンド → フロントエンドの順で確実に
+
+### **学習ポイント**:
+1. **分散トレースの実装**: W3C Trace Context標準準拠
+2. **Kubernetes統合**: Pod間通信とサービス発見
+3. **監視ツール活用**: Datadogの機能を最大限利用
+
+### **次回の準備事項**:
+- フロントエンドSpan送信の代替手段検討
+- プロキシサーバーまたはバックエンド中継の実装
+- 完全な分散トレース動作確認
+
+---
+
+**Phase 3総括**: バックエンドAPM統合は完全成功。フロントエンド統合は技術的課題が残るものの、研修環境として十分な価値のある監視基盤が完成。
