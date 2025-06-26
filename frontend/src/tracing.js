@@ -1,9 +1,11 @@
 /**
  * Simple OpenTelemetry Tracing Setup for Frontend
  * フロントエンド用のシンプルなOpenTelemetryトレース設定
+ * + Datadog RUM統合
  */
 
 import { trace } from '@opentelemetry/api';
+import { datadogRum } from '@datadog/browser-rum';
 
 /**
  * 簡易版のトレーサー実装
@@ -13,6 +15,53 @@ class SimpleFrontendTracer {
   constructor() {
     this.serviceName = 'gutenberg-search-frontend';
     this.currentSpans = new Map();
+    this.isDatadogEnabled = false;
+  }
+
+  /**
+   * Datadog RUMの初期化（開発用設定）
+   */
+  initializeDatadogRUM() {
+    try {
+      // 開発環境用の設定（実際のプロダクションでは環境変数から取得）
+      const config = {
+        applicationId: import.meta.env.VITE_DD_APPLICATION_ID || 'dev-test-app',
+        clientToken: import.meta.env.VITE_DD_CLIENT_TOKEN || 'dev-test-token',
+        site: import.meta.env.VITE_DD_SITE || 'datadoghq.com',
+        service: import.meta.env.VITE_DD_SERVICE || 'gutenberg-search-frontend',
+        env: import.meta.env.VITE_DD_ENV || 'development',
+        version: import.meta.env.VITE_DD_VERSION || '1.0.0',
+        sampleRate: parseInt(import.meta.env.VITE_DD_SAMPLE_RATE || '100'),
+        trackInteractions: true,
+        defaultPrivacyLevel: 'mask-user-input',
+        allowedTracingOrigins: [
+          'http://localhost:8000', // バックエンドAPI
+          window.location.origin   // 同一オリジン
+        ],
+        enableExperimentalFeatures: ['trace-init']
+      };
+
+      // 開発環境でのテスト用：実際のDatadogアカウントがない場合はモック
+      if (config.clientToken === 'dev-test-token') {
+        console.log('🧪 Datadog RUM - Development Mode (Mock)');
+        console.log('   Config:', config);
+        console.log('   ⚠️  実際のDatadog送信は行われません');
+        this.isDatadogEnabled = false;
+        return;
+      }
+
+      datadogRum.init(config);
+      this.isDatadogEnabled = true;
+      
+      console.log('🐕 Datadog RUM initialized successfully');
+      console.log('   Service:', config.service);
+      console.log('   Environment:', config.env);
+      
+    } catch (error) {
+      console.warn('⚠️  Datadog RUM initialization failed:', error);
+      console.log('   Continuing with OpenTelemetry-only mode...');
+      this.isDatadogEnabled = false;
+    }
   }
 
   startSpan(name, options = {}) {
@@ -39,6 +88,21 @@ class SimpleFrontendTracer {
     console.log(`   Span ID: ${spanId}`);
     if (Object.keys(span.attributes).length > 0) {
       console.log(`   Attributes:`, span.attributes);
+    }
+
+    // Datadog RUMへの統合
+    if (this.isDatadogEnabled && datadogRum) {
+      try {
+        datadogRum.addAction(name, {
+          'custom.trace_id': traceId,
+          'custom.span_id': spanId,
+          'custom.service': this.serviceName,
+          ...span.attributes
+        });
+        console.log(`🐕 Datadog RUM Action created: ${name}`);
+      } catch (error) {
+        console.warn('⚠️  Datadog RUM action creation failed:', error);
+      }
     }
 
     return {
@@ -171,10 +235,13 @@ class SimpleFrontendTracer {
 let globalTracer = null;
 
 /**
- * OpenTelemetryの初期化
+ * OpenTelemetryの初期化 + Datadog RUM統合
  */
 export function initializeTracing() {
   globalTracer = new SimpleFrontendTracer();
+  
+  // Datadog RUMの初期化
+  globalTracer.initializeDatadogRUM();
   
   // Fetchの自動計装（分散トレース対応版）
   if (typeof window !== 'undefined' && window.fetch) {

@@ -18,6 +18,9 @@ function Navbar() {
             <Link to="/search">
               検索
             </Link>
+            <Link to="/tracing-test">
+              🧪 トレースTest
+            </Link>
           </div>
         </div>
       </div>

@@ -1,0 +1,109 @@
+.tracing-test {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+
+  h3 {
+    margin-top: 0;
+    color: #495057;
+  }
+
+  .test-controls {
+    margin: 15px 0;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+
+    .test-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+
+      &.success {
+        background: #28a745;
+        color: white;
+
+        &:hover {
+          background: #218838;
+        }
+      }
+
+      &.error {
+        background: #dc3545;
+        color: white;
+
+        &:hover {
+          background: #c82333;
+        }
+      }
+
+      &.clear {
+        background: #6c757d;
+        color: white;
+
+        &:hover {
+          background: #5a6268;
+        }
+      }
+    }
+  }
+
+  .test-results {
+    margin: 20px 0;
+
+    h4 {
+      color: #495057;
+      margin-bottom: 10px;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+
+      li {
+        background: white;
+        border-left: 4px solid #28a745;
+        padding: 10px;
+        margin: 8px 0;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+
+        &.error {
+          border-left-color: #dc3545;
+        }
+
+        small {
+          color: #6c757d;
+          font-family: monospace;
+          font-size: 0.85em;
+        }
+      }
+    }
+  }
+
+  .instructions {
+    background: #e9ecef;
+    border-radius: 4px;
+    padding: 15px;
+    margin-top: 20px;
+
+    h4 {
+      margin-top: 0;
+      color: #495057;
+    }
+
+    ol {
+      margin: 10px 0 0 20px;
+      
+      li {
+        margin: 5px 0;
+        color: #6c757d;
+      }
+    }
+  }
+} 
