@@ -102,50 +102,42 @@ def setup_tracing():
     dd_trace_agent_url = os.getenv("DD_TRACE_AGENT_URL")
     otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
     
+    print(f"🔧 OpenTelemetry Setup:")
+    print(f"   Service Name: {service_name}")
+    print(f"   Environment: {environment}")
+    print(f"   DD_TRACE_AGENT_URL: {dd_trace_agent_url}")
+    print(f"   OTEL_EXPORTER_OTLP_ENDPOINT: {otlp_endpoint}")
+    
     # Datadog環境でのOTLP設定
     if dd_trace_agent_url:
         try:
             # Datadog Agent経由でのトレース送信
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
             
-            # Datadog Agent OTLPエンドポイント使用
-            dd_otlp_endpoint = dd_trace_agent_url.replace(":8126", ":4318")
+            # 環境変数で指定されたOTLPエンドポイントを直接使用
             otlp_exporter = HTTPOTLPSpanExporter(
-                endpoint=f"{dd_otlp_endpoint}/v1/traces",
+                endpoint=f"{otlp_endpoint}/v1/traces",
                 headers={}
             )
             tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-            print(f"🐕 Datadog OTLP Exporter configured: {dd_otlp_endpoint}")
+            print(f"✅ Datadog OTLP Exporter configured: {otlp_endpoint}/v1/traces")
             
         except Exception as e:
-            print(f"⚠️  Datadog OTLP Exporter setup failed: {e}")
-            # フォールバック: 標準OTLPエンドポイント
-            try:
-                from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
-                otlp_exporter = HTTPOTLPSpanExporter(
-                    endpoint=f"{otlp_endpoint}/v1/traces",
-                    headers={}
-                )
-                tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-                print(f"🔗 Fallback OTLP Exporter configured: {otlp_endpoint}")
-            except Exception as fallback_error:
-                print(f"⚠️  Fallback OTLP Exporter setup failed: {fallback_error}")
-                print("   Continuing with console output only...")
+            print(f"❌ Datadog OTLP Exporter setup failed: {e}")
+            print(f"   Continuing with console output only...")
     else:
-        # ローカル環境用の設定（一時的に無効化）
-        print(f"💡 OTLP送信を無効化（開発モード）")
-        print(f"   コンソール出力のみでトレーシング実行中...")
-        # try:
-        #     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
-        #     otlp_exporter = HTTPOTLPSpanExporter(
-        #         endpoint=f"{otlp_endpoint}/v1/traces",
-        #         headers={}
-        #     )
-        #     tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-        #     print(f"🔗 Local OTLP Exporter configured: {otlp_endpoint}")
-        # except Exception as e:
-        #     print(f"⚠️  Local OTLP Exporter setup failed: {e}")
-        #     print("   Continuing with console output only...")
+        # ローカル環境用の設定
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HTTPOTLPSpanExporter
+            otlp_exporter = HTTPOTLPSpanExporter(
+                endpoint=f"{otlp_endpoint}/v1/traces",
+                headers={}
+            )
+            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+            print(f"✅ Local OTLP Exporter configured: {otlp_endpoint}/v1/traces")
+        except Exception as e:
+            print(f"❌ Local OTLP Exporter setup failed: {e}")
+            print(f"   Continuing with console output only...")
     
     return trace.get_tracer(__name__)
 
