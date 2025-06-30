@@ -28,7 +28,7 @@ spec:
       containers:
       - name: backend
         image: ghcr.io/satomichi/observability_practice-backend:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8000
         env:
@@ -60,7 +60,7 @@ spec:
             path: /books
             port: 8000
           initialDelaySeconds: 30
-          periodSeconds: 10
+          periodSeconds: 300
           timeoutSeconds: 5
           failureThreshold: 3
         livenessProbe:
@@ -68,7 +68,7 @@ spec:
             path: /books
             port: 8000
           initialDelaySeconds: 60
-          periodSeconds: 30
+          periodSeconds: 300
           timeoutSeconds: 10
           failureThreshold: 3
         resources:
