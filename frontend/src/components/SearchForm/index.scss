@@ -14,6 +14,12 @@
   }
 
   .form-group {
+    margin-bottom: 1.5rem;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+
     label {
       display: block;
       font-size: 0.875rem;
@@ -47,6 +53,28 @@
           background-color: #9ca3af;
           cursor: not-allowed;
         }
+      }
+    }
+
+    select {
+      @extend .form-input;
+      width: 100%;
+      background-color: white;
+      cursor: pointer;
+
+      &:disabled {
+        background-color: #f9fafb;
+        cursor: not-allowed;
+      }
+    }
+
+    .method-description {
+      margin-top: 0.5rem;
+      
+      small {
+        color: #6b7280;
+        font-size: 0.75rem;
+        line-height: 1.4;
       }
     }
   }

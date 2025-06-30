@@ -11,6 +11,7 @@ import './index.scss'
 function Search() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState(searchParams.get('q') || '')
+  const [method, setMethod] = useState(searchParams.get('method') || 'tfidf')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -21,19 +22,22 @@ function Search() {
 
   useEffect(() => {
     const initialQuery = searchParams.get('q')
+    const initialMethod = searchParams.get('method') || 'tfidf'
     if (initialQuery) {
       setQuery(initialQuery)
-      performSearch(initialQuery)
+      setMethod(initialMethod)
+      performSearch(initialQuery, initialMethod)
     }
   }, [])
 
-  const performSearch = async (searchQuery = query) => {
+  const performSearch = async (searchQuery = query, searchMethod = method) => {
     if (!searchQuery.trim()) return
 
     // 検索全体をSpanで囲む
     const span = tracer.startSpan('frontend_search', {
       attributes: {
         'search.query': searchQuery,
+        'search.method': searchMethod,
         'search.page': 'search',
         'user.action': 'search_submit'
       }
@@ -70,13 +74,11 @@ function Search() {
       if (API_BASE_URL.startsWith('http')) {
         // 開発環境: 絶対URL
         url = new URL(`${API_BASE_URL}/search`)
+        url.searchParams.append('q', searchQuery)
+        url.searchParams.append('method', searchMethod)
       } else {
         // 本番環境: 相対パス
-        url = `${API_BASE_URL}/search?q=${encodeURIComponent(searchQuery)}`
-      }
-      
-      if (API_BASE_URL.startsWith('http')) {
-        url.searchParams.append('q', searchQuery)
+        url = `${API_BASE_URL}/search?q=${encodeURIComponent(searchQuery)}&method=${encodeURIComponent(searchMethod)}`
       }
       
       prepSpan.setAttributes({
@@ -154,10 +156,11 @@ function Search() {
       // URLパラメータを更新
       const urlUpdateSpan = tracer.startSpan('update_url_params', {
         attributes: {
-          'url.param.q': searchQuery
+          'url.param.q': searchQuery,
+          'url.param.method': searchMethod
         }
       })
-      setSearchParams({ q: searchQuery })
+      setSearchParams({ q: searchQuery, method: searchMethod })
       urlUpdateSpan.end()
       
       resultsSpan.end()
@@ -215,6 +218,8 @@ function Search() {
       <SearchForm 
         query={query}
         onQueryChange={setQuery}
+        method={method}
+        onMethodChange={setMethod}
         onSubmit={performSearch}
         loading={loading}
       />
@@ -233,6 +238,15 @@ function Search() {
                 </span>
               )}
             </h2>
+            {!loading && results.length > 0 && (
+              <div className="search-method-badge">
+                <span className={`method-badge method-${method}`}>
+                  {method === 'tfidf' ? '🔵 TF-IDF' : 
+                   method === 'bm25' ? '🟢 BM25' : 
+                   method === 'slow_tfidf' ? '🔴 遅いTF-IDF' : method}
+                </span>
+              </div>
+            )}
           </div>
 
           {loading && <LoadingSpinner size="md" />}

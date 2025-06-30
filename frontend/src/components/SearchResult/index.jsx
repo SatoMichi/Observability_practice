@@ -31,7 +31,7 @@ function SearchResult({ result, searchQuery }) {
         />
       </div>
       <div className="search-result__score">
-        関連度: {(result.score * 100).toFixed(1)}%
+        スコア: {result.score.toFixed(3)}点
       </div>
     </div>
   )

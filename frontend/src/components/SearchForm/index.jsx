@@ -1,6 +1,6 @@
 import './index.scss'
 
-function SearchForm({ query, onQueryChange, onSubmit, loading }) {
+function SearchForm({ query, onQueryChange, method, onMethodChange, onSubmit, loading }) {
   const handleSubmit = (e) => {
     e.preventDefault()
     onSubmit()
@@ -28,6 +28,33 @@ function SearchForm({ query, onQueryChange, onSubmit, loading }) {
             >
               {loading ? '検索中...' : '検索'}
             </button>
+          </div>
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="method">
+            検索手法
+          </label>
+          <select
+            id="method"
+            value={method}
+            onChange={(e) => onMethodChange(e.target.value)}
+            disabled={loading}
+          >
+            <option value="tfidf">TF-IDF（従来手法）</option>
+            <option value="bm25">BM25（高精度）</option>
+            <option value="slow_tfidf">TF-IDF（遅い版・研修用）</option>
+          </select>
+          <div className="method-description">
+            {method === 'tfidf' && (
+              <small>🔵 TF-IDF: 単語の出現頻度と希少性を考慮した検索</small>
+            )}
+            {method === 'bm25' && (
+              <small>🟢 BM25: より実用的で高精度な検索アルゴリズム</small>
+            )}
+            {method === 'slow_tfidf' && (
+              <small>🔴 遅いTF-IDF: オブザーバビリティー研修用（意図的に遅い実装）</small>
+            )}
           </div>
         </div>
       </form>
