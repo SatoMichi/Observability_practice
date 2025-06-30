@@ -41,9 +41,9 @@ function SearchForm({ query, onQueryChange, method, onMethodChange, onSubmit, lo
             onChange={(e) => onMethodChange(e.target.value)}
             disabled={loading}
           >
-            <option value="tfidf">TF-IDF（従来手法）</option>
-            <option value="bm25">BM25（高精度）</option>
-            <option value="slow_tfidf">遅いTF-IDF（研修用）</option>
+            {/* <option value="tfidf">TF-IDF（従来手法）</option> */}
+            {/* <option value="bm25">BM25（高精度）</option> */}
+            <option value="slow_tfidf">TF-IDF</option>
           </select>
           <div className="method-description">
             {method === 'tfidf' && (
